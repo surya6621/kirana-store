@@ -82,6 +82,9 @@ CREATE TABLE inventory (
     quantity NUMERIC(12,3) NOT NULL DEFAULT 0
         CHECK (quantity >= 0),
 
+    minimum_stock NUMERIC(12,3) NOT NULL DEFAULT 5
+        CHECK (minimum_stock >= 0),
+
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

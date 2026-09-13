@@ -5,6 +5,7 @@ const {
     createCustomer,
     getCustomerCreditHistory,
     recordCustomerPayment,
+    getAllCustomerPayments,
 } = require("../controllers/customerController");
 
 const {
@@ -40,6 +41,13 @@ router.get(
     authenticate,
     requireStaff,
     getCustomerCreditHistory
+);
+
+router.get(
+    "/credit-history",
+    authenticate,
+    requireStaff,
+    getAllCustomerPayments
 );
 
 

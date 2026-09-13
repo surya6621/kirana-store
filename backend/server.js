@@ -11,6 +11,7 @@ const supplierRoutes = require("./routes/supplierRoutes");
 const purchaseRoutes = require("./routes/purchaseRoutes");
 const customerRoutes = require("./routes/customerRoutes");
 const saleRoutes = require("./routes/saleRoutes");
+const dashboardRoutes = require("./routes/dashboardRoutes");
 
 dotenv.config();
 
@@ -73,6 +74,9 @@ app.use("/api/customers", customerRoutes);
 
 // Sale routes
 app.use("/api/sales", saleRoutes);
+
+// Dashboard routes
+app.use("/api/dashboard", dashboardRoutes);
 
 // Start server
 app.listen(PORT, () => {
