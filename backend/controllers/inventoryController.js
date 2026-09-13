@@ -270,10 +270,80 @@ const getStockHistory = async (req, res) => {
     }
 };
 
+// =========================================
+// UPDATE MINIMUM STOCK
+// =========================================
+
+const updateMinimumStock = async (req, res) => {
+    try {
+        const { productId } = req.params;
+        const { minimum_stock } = req.body;
+
+        if (minimum_stock === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: "Minimum stock is required",
+            });
+        }
+
+        const minimumStock = Number(minimum_stock);
+
+        if (
+            !Number.isFinite(minimumStock) ||
+            minimumStock < 0
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Minimum stock must be a valid number greater than or equal to 0",
+            });
+        }
+
+        const result = await pool.query(
+            `UPDATE inventory
+             SET minimum_stock = $1,
+                 updated_at = NOW()
+             WHERE product_id = $2
+             RETURNING
+                 product_id,
+                 quantity,
+                 minimum_stock,
+                 updated_at`,
+            [minimumStock, productId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Inventory record not found",
+            });
+        }
+
+        res.json({
+            success: true,
+            message:
+                "Minimum stock updated successfully",
+            data: result.rows[0],
+        });
+
+    } catch (error) {
+        console.error(
+            "Update minimum stock error:",
+            error
+        );
+
+        res.status(500).json({
+            success: false,
+            message:
+                "Failed to update minimum stock",
+        });
+    }
+};
 
 module.exports = {
     getInventory,
     getLowStock,
     updateStock,
+    updateMinimumStock,
     getStockHistory,
 };

@@ -3,6 +3,7 @@ const express = require("express");
 const {
     createOfflineSale,
     getSales,
+    getSaleById,
 } = require("../controllers/saleController");
 
 const {
@@ -17,6 +18,13 @@ router.get(
     authenticate,
     requireStaff,
     getSales
+);
+
+router.get(
+    "/:id",
+    authenticate,
+    requireStaff,
+    getSaleById
 );
 
 router.post(

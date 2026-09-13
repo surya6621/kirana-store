@@ -515,7 +515,90 @@ const getSales = async (req, res) => {
 };
 
 
+// =========================================
+// GET SALE BY ID
+// =========================================
+
+const getSaleById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const saleResult = await pool.query(`
+            SELECT
+                s.id,
+                s.customer_id,
+                s.sale_type,
+                s.total_amount,
+                s.payment_status,
+                s.status,
+                s.created_at,
+                c.name AS customer_name,
+                c.phone AS customer_phone
+            FROM sales s
+            LEFT JOIN customers c
+                ON s.customer_id = c.id
+            WHERE s.id = $1
+        `, [id]);
+
+        if (saleResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Sale not found",
+            });
+        }
+
+        const sale = saleResult.rows[0];
+
+        const itemsResult = await pool.query(`
+            SELECT
+                si.product_id,
+                p.name AS product_name,
+                p.unit,
+                si.quantity,
+                si.price,
+                si.discount
+            FROM sale_items si
+            JOIN products p
+                ON si.product_id = p.id
+            WHERE si.sale_id = $1
+        `, [id]);
+
+        const items = itemsResult.rows.map(item => {
+            const qty = Number(item.quantity);
+            const price = Number(item.price);
+            const disc = Number(item.discount || 0);
+            const itemTotal = (qty * price) - disc;
+            return {
+                product_id: item.product_id,
+                product_name: item.product_name,
+                unit: item.unit,
+                quantity: qty,
+                price: price,
+                discount: disc,
+                item_total: Number(itemTotal.toFixed(2)),
+            };
+        });
+
+        res.json({
+            success: true,
+            data: {
+                ...sale,
+                total_amount: Number(sale.total_amount),
+                items,
+            },
+        });
+    } catch (error) {
+        console.error("Get sale by ID error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to get sale details",
+        });
+    }
+};
+
+
 module.exports = {
     createOfflineSale,
     getSales,
+    getSaleById,
 };

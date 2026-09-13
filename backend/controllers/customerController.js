@@ -178,6 +178,7 @@ const recordCustomerPayment = async (req, res) => {
             amount,
             payment_method,
             description,
+            sale_id,
         } = req.body;
 
         const paymentAmount = Number(amount);
@@ -218,6 +219,78 @@ const recordCustomerPayment = async (req, res) => {
                 success: false,
                 message: "Customer not found",
             });
+        }
+
+        let targetSaleId = null;
+
+        if (sale_id !== undefined && sale_id !== null && sale_id !== "") {
+            targetSaleId = Number(sale_id);
+            if (!Number.isFinite(targetSaleId)) {
+                await client.query("ROLLBACK");
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid sale ID",
+                });
+            }
+
+            // Verify sale exists and belongs to this customer
+            const saleCheck = await client.query(
+                `SELECT id, customer_id, total_amount FROM sales WHERE id = $1`,
+                [targetSaleId]
+            );
+
+            if (saleCheck.rows.length === 0) {
+                await client.query("ROLLBACK");
+                return res.status(404).json({
+                    success: false,
+                    message: "Sale not found",
+                });
+            }
+
+            const sale = saleCheck.rows[0];
+            if (String(sale.customer_id) !== String(customerId)) {
+                await client.query("ROLLBACK");
+                return res.status(400).json({
+                    success: false,
+                    message: "Sale does not belong to this customer",
+                });
+            }
+
+            // Calculate current due for this specific bill using existing credit/payment history
+            const billHistoryCheck = await client.query(
+                `SELECT transaction_type, amount FROM customer_credit_transactions WHERE customer_id = $1 AND sale_id = $2`,
+                [customerId, targetSaleId]
+            );
+
+            const billCredits = billHistoryCheck.rows
+                .filter(t => t.transaction_type === 'CREDIT')
+                .reduce((acc, t) => acc + Number(t.amount), 0);
+
+            // Payments applied to this sale (general payments or direct payments)
+            // To be precise, let's fetch all customer credit transactions to compute FIFO or direct bill dues.
+            // Alternatively, query payments table for this sale:
+            const billPaymentsCheck = await client.query(
+                `SELECT SUM(amount) AS total_paid FROM payments WHERE sale_id = $1`,
+                [targetSaleId]
+            );
+            const billPaid = Number(billPaymentsCheck.rows[0]?.total_paid || 0);
+            const billDue = Number((billCredits - billPaid).toFixed(2));
+
+            if (billDue <= 0) {
+                await client.query("ROLLBACK");
+                return res.status(400).json({
+                    success: false,
+                    message: "Selected bill is already fully paid",
+                });
+            }
+
+            if (paymentAmount > billDue) {
+                await client.query("ROLLBACK");
+                return res.status(400).json({
+                    success: false,
+                    message: `Payment cannot be greater than bill due of ₹${billDue}`,
+                });
+            }
         }
 
         // Calculate current due
@@ -268,10 +341,30 @@ const recordCustomerPayment = async (req, res) => {
             (currentDue - paymentAmount).toFixed(2)
         );
 
-        // Record payment
+        // Record payment in payments table if targetSaleId exists, or record customer payment transaction
+        if (targetSaleId) {
+            await client.query(
+                `INSERT INTO payments (
+                    sale_id,
+                    payment_method,
+                    amount,
+                    created_by
+                )
+                VALUES ($1, $2, $3, $4)`,
+                [
+                    targetSaleId,
+                    payment_method,
+                    paymentAmount,
+                    req.user.userId,
+                ]
+            );
+        }
+
+        // Record payment transaction
         await client.query(
             `INSERT INTO customer_credit_transactions (
                 customer_id,
+                sale_id,
                 transaction_type,
                 amount,
                 description,
@@ -279,16 +372,18 @@ const recordCustomerPayment = async (req, res) => {
             )
             VALUES (
                 $1,
-                'PAYMENT',
                 $2,
+                'PAYMENT',
                 $3,
-                $4
+                $4,
+                $5
             )`,
             [
                 customerId,
+                targetSaleId,
                 paymentAmount,
                 description ||
-                    `Customer payment via ${payment_method}`,
+                    (targetSaleId ? `Payment for Bill #${targetSaleId} via ${payment_method}` : `Customer payment via ${payment_method}`),
                 req.user.userId,
             ]
         );
@@ -306,6 +401,7 @@ const recordCustomerPayment = async (req, res) => {
                 amount_paid: paymentAmount,
                 previous_due: currentDue,
                 remaining_due: remainingDue,
+                sale_id: targetSaleId,
             },
         });
 
@@ -326,9 +422,59 @@ const recordCustomerPayment = async (req, res) => {
     }
 };
 
+// =========================================
+// GET ALL CUSTOMER PAYMENT HISTORY
+// =========================================
+
+const getAllCustomerPayments = async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                ct.id AS payment_id,
+                ct.customer_id,
+                c.name AS customer_name,
+                c.phone AS customer_phone,
+                ct.sale_id,
+                CASE
+                    WHEN ct.sale_id IS NOT NULL THEN ct.sale_id
+                    ELSE NULL
+                END AS bill_number,
+                ct.amount,
+                CASE
+                    WHEN ct.description LIKE '%CASH%' THEN 'CASH'
+                    WHEN ct.description LIKE '%UPI%' THEN 'UPI'
+                    ELSE NULL
+                END AS payment_method,
+                ct.description,
+                ct.created_at,
+                u.name AS created_by_name
+            FROM customer_credit_transactions ct
+            LEFT JOIN customers c
+                ON ct.customer_id = c.id
+            LEFT JOIN users u
+                ON ct.created_by = u.id
+            WHERE ct.transaction_type = 'PAYMENT'
+            ORDER BY ct.created_at DESC
+        `);
+
+        res.json({
+            success: true,
+            data: result.rows,
+        });
+    } catch (error) {
+        console.error("Get all customer payments error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to get customer payment history",
+        });
+    }
+};
+
 module.exports = {
     getCustomers,
     createCustomer,
     getCustomerCreditHistory,
     recordCustomerPayment,
+    getAllCustomerPayments,
 };

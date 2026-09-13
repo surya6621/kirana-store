@@ -5,6 +5,7 @@ const {
     getLowStock,
     updateStock,
     getStockHistory,
+    updateMinimumStock,
 } = require("../controllers/inventoryController");
 
 const {
@@ -34,6 +35,13 @@ router.patch(
     authenticate,
     requireStaff,
     updateStock
+);
+
+router.put(
+    "/:productId/minimum-stock",
+    authenticate,
+    requireStaff,
+    updateMinimumStock
 );
 
 router.get(
