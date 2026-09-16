@@ -1,116 +1,65 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { AlertTriangle, ArrowUpRight, IndianRupee, Package, RefreshCw, ShoppingBag, ShoppingCart, TrendingUp, Truck, Users } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../../services/api';
-import { Card } from '../../../components/ui/Card';
-import { Button } from '../../../components/ui/Button';
-import { Loader } from '../../../components/ui/Loader';
-import { ErrorMessage } from '../../../components/ui/ErrorMessage';
-import { BarChart3, TrendingUp, Users, Package, AlertCircle } from 'lucide-react';
+import { formatCurrency, formatDate, formatStockWithUnit, stockStatus } from '../../../utils/format';
+
+const PERIODS = [
+  { value: 'today', label: 'Today' },
+  { value: 'week', label: 'This Week' },
+  { value: 'month', label: 'This Month' },
+  { value: 'year', label: 'This Year' },
+  { value: 'custom', label: 'Custom Range' },
+];
 
 export function Reports() {
-  const [dashboardData, setDashboardData] = useState(null);
+  const [period, setPeriod] = useState('today');
+  const [customRange, setCustomRange] = useState({ start: '', end: '' });
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchReportsData();
-  }, []);
-
-  const fetchReportsData = async () => {
+  const fetchReports = async () => {
+    if (period === 'custom' && (!customRange.start || !customRange.end)) return;
+    setLoading(true); setError('');
+    const params = new URLSearchParams({ period });
+    if (period === 'custom') { params.set('start', customRange.start); params.set('end', customRange.end); }
     try {
-      setLoading(true);
-      const res = await api.get('/dashboard');
-      if (res.success) {
-        setDashboardData(res.data);
-      } else {
-        setError(res.message || 'Failed to load report analytics');
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+      const response = await api.get(`/reports?${params.toString()}`);
+      if (!response.success) throw new Error(response.message);
+      setData(response.data);
+    } catch (err) { setError('Unable to load this report. Try again.'); console.error(err); } finally { setLoading(false); }
   };
 
-  if (loading) return <Loader text="Loading reports data..." />;
+  useEffect(() => { fetchReports(); }, [period, customRange.start, customRange.end]);
 
-  const stats = dashboardData?.stats || {};
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Business Reports & Analytics</h1>
-        <Button onClick={fetchReportsData} variant="outline" className="text-sm">
-          Refresh
-        </Button>
-      </div>
-
-      {error && <ErrorMessage message={error} />}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-700">Sales Summary</h3>
-            <TrendingUp className="w-5 h-5 text-green-600" />
-          </div>
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Today's Revenue:</span>
-              <span className="font-bold text-gray-900">₹{stats.todaySales || 0}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Total Transactions:</span>
-              <span className="font-bold text-gray-900">{stats.todaySalesCount || 0}</span>
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-700">Udhaar & Dues</h3>
-            <Users className="w-5 h-5 text-orange-600" />
-          </div>
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Customer Udhaar:</span>
-              <span className="font-bold text-orange-600">₹{stats.customerUdhaar || 0}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Supplier Dues:</span>
-              <span className="font-bold text-red-600">₹{stats.supplierDue || 0}</span>
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-700">Inventory Status</h3>
-            <Package className="w-5 h-5 text-indigo-600" />
-          </div>
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Total Catalog Products:</span>
-              <span className="font-bold text-gray-900">{stats.totalProducts || 0}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Low Stock Items:</span>
-              <span className="font-bold text-red-600">{dashboardData?.lowStock?.length || 0}</span>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      <Card className="p-6 bg-blue-50 border border-blue-100">
-        <div className="flex items-start space-x-3">
-          <AlertCircle className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <h4 className="font-semibold text-blue-900">Advanced Analytics Notice</h4>
-            <p className="text-sm text-blue-700 mt-1">
-              Detailed multi-month graphs and advanced tax reporting endpoints are currently not provided by the backend API. 
-              The metrics above reflect real-time aggregated data directly from the active backend database.
-            </p>
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
+  const sales = data?.sales; const purchases = data?.purchases; const money = data?.money; const dues = data?.dues; const inventory = data?.inventory;
+  return <div className="space-y-7">
+    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="mb-1 text-sm font-semibold text-emerald-700">Decisions from live store data</p><h2 className="page-title text-3xl font-extrabold">Business Reports & Analytics</h2><p className="mt-2 text-sm text-[var(--muted)]">Sales, cash movement, obligations, and stock health in one view.</p></div><div className="flex flex-wrap items-center gap-2"><select value={period} onChange={(event) => setPeriod(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-600" aria-label="Report period">{PERIODS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><button onClick={fetchReports} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50" aria-label="Refresh reports"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</button></div></div>
+    {period === 'custom' && <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4"><DateField label="From" value={customRange.start} onChange={(value) => setCustomRange((range) => ({ ...range, start: value }))} /><DateField label="To" value={customRange.end} onChange={(value) => setCustomRange((range) => ({ ...range, end: value }))} /></div>}
+    {error && <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700"><AlertTriangle className="h-5 w-5 shrink-0" />{error}<button onClick={fetchReports} className="ml-auto font-bold underline">Retry</button></div>}
+    {loading ? <LoadingState /> : data && <>
+      <SectionTitle title="At a glance" />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Kpi icon={IndianRupee} label="Sales revenue" value={formatCurrency(sales.revenue)} tone="green" /><Kpi icon={ShoppingBag} label="Bills" value={sales.bills} tone="blue" /><Kpi icon={Users} label="Customer received" value={formatCurrency(money.received)} tone="orange" /><Kpi icon={Truck} label="Supplier sent" value={formatCurrency(money.sent)} tone="red" /><Kpi icon={Users} label="Customer due" value={formatCurrency(dues.customer)} tone="amber" /><Kpi icon={Truck} label="Supplier due" value={formatCurrency(dues.supplier)} tone="red" /><Kpi icon={Package} label="Products" value={inventory.total_products} tone="violet" /><Kpi icon={AlertTriangle} label="Low stock" value={inventory.low_stock} tone="amber" /></div>
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_.8fr]"><Panel title="Sales summary" icon={TrendingUp}><div className="grid grid-cols-2 gap-4 sm:grid-cols-4"><Value label="Revenue" value={formatCurrency(sales.revenue)} /><Value label="Average bill" value={formatCurrency(sales.average_bill)} /><Value label="Paid sales" value={formatCurrency(sales.paid_sales)} /><Value label="Credit sales" value={formatCurrency(sales.credit_sales)} /></div><div className="mt-5"><h4 className="mb-3 text-sm font-bold text-slate-600">Sales trend</h4><TrendChart points={data.sales_trend} /></div></Panel><Panel title="Money flow" icon={IndianRupee}><Value label="Money received" value={formatCurrency(money.received)} tone="green" /><Value label="Money sent" value={formatCurrency(money.sent)} tone="red" /><div className="my-3 border-t border-[var(--line)]" /><Value label="Net cash movement" value={formatCurrency(money.net_cash_movement)} tone={money.net_cash_movement >= 0 ? 'green' : 'red'} /><Breakdown title="Customer received" values={money.received_breakdown} /><Breakdown title="Supplier sent" values={money.sent_breakdown} /></Panel></div>
+      <div className="grid gap-6 xl:grid-cols-2"><Panel title="Purchase summary" icon={ShoppingCart}><div className="grid grid-cols-2 gap-4"><Value label="Purchase amount" value={formatCurrency(purchases.total)} /><Value label="Purchase orders" value={purchases.count} /><Value label="Amount paid" value={formatCurrency(purchases.amount_paid)} tone="green" /><Value label="Amount due" value={formatCurrency(purchases.amount_due)} tone="red" /></div></Panel><Panel title="Inventory status" icon={Package}><div className="grid grid-cols-2 gap-4 sm:grid-cols-4"><Value label="Total products" value={inventory.total_products} /><Value label="Low stock" value={inventory.low_stock} tone="amber" /><Value label="Out of stock" value={inventory.out_of_stock} tone="red" /><Value label="Well stocked" value={inventory.well_stocked} tone="green" /></div><p className="mt-5 text-sm text-[var(--muted)]">Current stock value at recorded purchase prices: <strong className="text-slate-800">{formatCurrency(inventory.stock_value)}</strong></p></Panel></div>
+      <div className="grid gap-6 xl:grid-cols-2"><Panel title="Top selling products" icon={ShoppingBag} action={<button onClick={() => navigate('/owner/sales')} className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">View sales <ArrowUpRight className="h-3.5 w-3.5" /></button>}><ProductTable products={data.top_products} /></Panel><Panel title="Low stock watchlist" icon={AlertTriangle} action={<button onClick={() => navigate('/owner/inventory')} className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">View inventory <ArrowUpRight className="h-3.5 w-3.5" /></button>}><LowStockTable products={data.low_stock} /></Panel></div>
+      <div className="grid gap-6 xl:grid-cols-2"><Panel title="Recent sales" icon={ShoppingBag}><RecentSales rows={data.recent_sales} /></Panel><Panel title="Recent purchases" icon={ShoppingCart}><RecentPurchases rows={data.recent_purchases} /></Panel></div>
+    </>}
+  </div>;
 }
+
+function LoadingState() { return <><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[1, 2, 3, 4, 5, 6, 7, 8].map((item) => <div key={item} className="h-28 animate-pulse rounded-2xl bg-slate-200" />)}</div><div className="grid gap-6 xl:grid-cols-2"><div className="h-72 animate-pulse rounded-2xl bg-slate-200" /><div className="h-72 animate-pulse rounded-2xl bg-slate-200" /></div></>; }
+function SectionTitle({ title }) { return <h3 className="text-xs font-extrabold uppercase tracking-[.16em] text-[var(--muted)]">{title}</h3>; }
+function DateField({ label, value, onChange }) { return <label className="text-xs font-bold text-slate-600">{label}<input type="date" value={value} onChange={(event) => onChange(event.target.value)} className="ml-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold" /></label>; }
+function Kpi({ icon: Icon, label, value, tone }) { const tones = { green: 'bg-emerald-50 text-emerald-700', blue: 'bg-blue-50 text-blue-700', violet: 'bg-violet-50 text-violet-700', amber: 'bg-amber-50 text-amber-700', orange: 'bg-orange-50 text-orange-700', red: 'bg-red-50 text-red-700' }; return <div className="surface rounded-2xl p-4"><div className={`mb-4 flex h-9 w-9 items-center justify-center rounded-xl ${tones[tone]}`}><Icon className="h-4 w-4" /></div><p className="text-xs font-semibold text-[var(--muted)]">{label}</p><p className="mt-1 truncate text-lg font-extrabold sm:text-xl">{value}</p></div>; }
+function Panel({ title, icon: Icon, action, children }) { return <section className="surface overflow-hidden rounded-2xl"><div className="flex items-center justify-between border-b border-[var(--line)] p-5"><div className="flex items-center gap-2"><Icon className="h-4 w-4 text-emerald-700" /><h3 className="font-extrabold">{title}</h3></div>{action}</div><div className="p-5">{children}</div></section>; }
+function Value({ label, value, tone = 'neutral' }) { const colors = { neutral: 'text-slate-900', green: 'text-emerald-700', red: 'text-red-600', amber: 'text-amber-700' }; return <div><p className="text-xs font-semibold text-[var(--muted)]">{label}</p><p className={`mt-1 text-lg font-extrabold ${colors[tone]}`}>{value}</p></div>; }
+function Breakdown({ title, values }) { return <div className="mt-4"><p className="text-xs font-bold text-slate-500">{title}</p><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm"><span>Cash {formatCurrency(values.cash)}</span><span>UPI {formatCurrency(values.upi)}</span><span>Other {formatCurrency(values.other)}</span></div></div>; }
+function TrendChart({ points }) { if (!points.length) return <p className="rounded-xl bg-slate-50 p-5 text-sm text-[var(--muted)]">No sales for this period.</p>; const max = Math.max(...points.map((point) => Number(point.sales)), 1); return <div className="flex h-36 items-end gap-2 overflow-x-auto border-b border-slate-200 pb-1">{points.map((point) => <div key={point.date_bucket} className="flex min-w-12 flex-1 flex-col items-center justify-end gap-1"><span className="text-[10px] font-bold text-slate-500">{formatCurrency(point.sales)}</span><div className="w-full rounded-t-md bg-emerald-500" style={{ height: `${Math.max((Number(point.sales) / max) * 100, 5)}%` }} /><span className="text-[10px] text-slate-500">{new Date(point.date_bucket).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span></div>)}</div>; }
+function ProductTable({ products }) { if (!products.length) return <Empty text="No sales for this period." />; return <div className="divide-y divide-slate-100">{products.map((product) => <div key={product.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"><div><p className="text-sm font-bold">{product.name}</p><p className="text-xs text-[var(--muted)]">{formatStockWithUnit(product.quantity_sold, product.unit)} sold</p></div><p className="text-sm font-extrabold">{formatCurrency(product.sales_value)}</p></div>)}</div>; }
+function LowStockTable({ products }) { if (!products.length) return <Empty text="Everything is comfortably stocked." />; return <div className="divide-y divide-slate-100">{products.map((product) => { const status = stockStatus(product.current_stock, product.minimum_stock); return <div key={product.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"><div><p className="text-sm font-bold">{product.name}</p><p className="text-xs text-[var(--muted)]">{formatStockWithUnit(product.current_stock, product.unit)} current · threshold {formatStockWithUnit(product.minimum_stock, product.unit)}</p></div><span className={`status-badge ${status.tone === 'danger' ? 'status-danger' : 'status-warning'}`}>{status.label}</span></div>; })}</div>; }
+function RecentSales({ rows }) { if (!rows.length) return <Empty text="No sales for this period." />; return <div className="divide-y divide-slate-100">{rows.map((row) => <div key={row.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"><div><p className="text-sm font-bold">Bill #{row.id}</p><p className="text-xs text-[var(--muted)]">{row.customer_name || 'Walk-in customer'} · {formatDate(row.created_at)}</p></div><div className="text-right"><p className="text-sm font-extrabold">{formatCurrency(row.total_amount)}</p><span className="text-[11px] font-bold text-slate-500">{row.payment_status?.toLowerCase()}</span></div></div>)}</div>; }
+function RecentPurchases({ rows }) { if (!rows.length) return <Empty text="No purchases for this period." />; return <div className="divide-y divide-slate-100">{rows.map((row) => <div key={row.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"><div><p className="text-sm font-bold">Purchase #{row.id}</p><p className="text-xs text-[var(--muted)]">{row.supplier_name || 'Unassigned supplier'} · {formatDate(row.created_at)}</p></div><div className="text-right"><p className="text-sm font-extrabold">{formatCurrency(row.total_amount)}</p><span className="text-[11px] font-bold text-slate-500">{row.payment_status?.toLowerCase()}</span></div></div>)}</div>; }
+function Empty({ text }) { return <p className="rounded-xl bg-slate-50 p-5 text-sm text-[var(--muted)]">{text}</p>; }

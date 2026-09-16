@@ -50,7 +50,7 @@ const createOfflineSale = async (req, res) => {
             const customerResult = await client.query(
                 `SELECT id
                  FROM customers
-                 WHERE id = $1`,
+                 WHERE id = $1 AND is_active = true`,
                 [customer_id]
             );
 

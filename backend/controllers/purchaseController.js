@@ -48,7 +48,7 @@ const createPurchase = async (req, res) => {
         const supplierResult = await client.query(
             `SELECT id
              FROM suppliers
-             WHERE id = $1`,
+             WHERE id = $1 AND is_active = true`,
             [supplier_id]
         );
 

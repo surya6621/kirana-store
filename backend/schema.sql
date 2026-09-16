@@ -130,14 +130,25 @@ CREATE TABLE inventory_transactions (
 -- CUSTOMERS
 -- =========================================
 
+CREATE SEQUENCE customer_business_id_seq;
+
 CREATE TABLE customers (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    customer_code VARCHAR(20) NOT NULL UNIQUE DEFAULT (
+        'CUS-' || LPAD(nextval('customer_business_id_seq')::TEXT, 6, '0')
+    ),
 
     name VARCHAR(100) NOT NULL,
 
     phone VARCHAR(20) UNIQUE,
 
     address TEXT,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    CONSTRAINT customers_customer_code_format_check
+        CHECK (customer_code ~ '^CUS-[0-9]{6,}$'),
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -298,6 +309,8 @@ CREATE TABLE suppliers (
 
     address TEXT,
 
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -317,6 +330,9 @@ CREATE TABLE purchases (
     total_amount NUMERIC(12,2) NOT NULL DEFAULT 0
         CHECK (total_amount >= 0),
 
+    amount_paid NUMERIC(12,2) NOT NULL DEFAULT 0
+        CHECK (amount_paid >= 0),
+
     payment_status VARCHAR(20) NOT NULL DEFAULT 'PAID'
         CHECK (
             payment_status IN (
@@ -325,6 +341,39 @@ CREATE TABLE purchases (
                 'PARTIAL'
             )
         ),
+
+    created_by BIGINT
+        REFERENCES users(id)
+        ON DELETE SET NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+-- =========================================
+-- SUPPLIER CREDIT LEDGER
+-- CREDIT rows represent active purchase liabilities.
+-- PAYMENT rows are preserved for history and allocated to purchases.
+-- =========================================
+
+CREATE TABLE supplier_credit_transactions (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    supplier_id BIGINT NOT NULL
+        REFERENCES suppliers(id)
+        ON DELETE RESTRICT,
+
+    purchase_id BIGINT
+        REFERENCES purchases(id)
+        ON DELETE SET NULL,
+
+    transaction_type VARCHAR(20) NOT NULL
+        CHECK (transaction_type IN ('CREDIT', 'PAYMENT')),
+
+    amount NUMERIC(12,2) NOT NULL
+        CHECK (amount > 0),
+
+    description TEXT,
 
     created_by BIGINT
         REFERENCES users(id)
@@ -416,6 +465,12 @@ ON customer_credit_transactions(customer_id);
 
 CREATE INDEX idx_purchases_supplier
 ON purchases(supplier_id);
+
+CREATE INDEX idx_supplier_credit_supplier
+ON supplier_credit_transactions(supplier_id);
+
+CREATE INDEX idx_supplier_credit_purchase
+ON supplier_credit_transactions(purchase_id);
 
 CREATE INDEX idx_daily_prices_date
 ON daily_prices(price_date);

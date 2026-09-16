@@ -1,227 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { AlertTriangle, ArrowUpRight, IndianRupee, Package, RefreshCw, ShoppingBag, Truck, Users } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../../services/api';
 import { Card } from '../../../components/ui/Card';
-import { Loader } from '../../../components/ui/Loader';
-import { ErrorMessage } from '../../../components/ui/ErrorMessage';
-import { Button } from '../../../components/ui/Button';
-import { 
-  IndianRupee, 
-  ShoppingBag, 
-  Users, 
-  Package, 
-  Truck, 
-  AlertTriangle, 
-  Clock
-} from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { ProductImage } from '../../../components/ui/ProductImage';
+import { formatCurrency, formatDate } from '../../../utils/format';
 
 export function Dashboard() {
-  const [dashboardData, setDashboardData] = useState(null);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
   const navigate = useNavigate();
-
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      const res = await api.get('/dashboard');
-      if (res.success) {
-        setDashboardData(res.data);
-      } else {
-        setError(res.message || 'Failed to load dashboard data');
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) return <Loader text="Loading business dashboard..." />;
-  if (error) return <ErrorMessage message={error} />;
-  if (!dashboardData) return <ErrorMessage message="No dashboard data found." />;
-
-  // Mapped from backend field names
-  const { 
-    today_sales, 
-    today_sales_count, 
-    total_products, 
-    customer_due, 
-    supplier_due, 
-    low_stock, 
-    recent_sales 
-  } = dashboardData;
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Business Dashboard</h1>
-        <Button onClick={fetchDashboardData} variant="outline" className="text-sm">
-          Refresh
-        </Button>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <Card className="flex items-center p-4">
-          <div className="p-3 bg-green-100 rounded-lg text-green-600 mr-4">
-            <IndianRupee className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Today's Sales</p>
-            <h3 className="text-xl font-bold text-gray-900">₹{today_sales || 0}</h3>
-          </div>
-        </Card>
-
-        <Card className="flex items-center p-4">
-          <div className="p-3 bg-blue-100 rounded-lg text-blue-600 mr-4">
-            <ShoppingBag className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Sales Count</p>
-            <h3 className="text-xl font-bold text-gray-900">{today_sales_count || 0}</h3>
-          </div>
-        </Card>
-
-        <Card className="flex items-center p-4">
-          <div className="p-3 bg-indigo-100 rounded-lg text-indigo-600 mr-4">
-            <Package className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Total Products</p>
-            <h3 className="text-xl font-bold text-gray-900">{total_products || 0}</h3>
-          </div>
-        </Card>
-
-        <Card className="flex items-center p-4">
-          <div className="p-3 bg-orange-100 rounded-lg text-orange-600 mr-4">
-            <Users className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Customer Due</p>
-            <h3 className="text-xl font-bold text-gray-900">₹{customer_due || 0}</h3>
-          </div>
-        </Card>
-
-        <Card className="flex items-center p-4">
-          <div className="p-3 bg-red-100 rounded-lg text-red-600 mr-4">
-            <Truck className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Supplier Due</p>
-            <h3 className="text-xl font-bold text-gray-900">₹{supplier_due || 0}</h3>
-          </div>
-        </Card>
-      </div>
-
-      {/* Quick Actions */}
-      <Card>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Button onClick={() => navigate('/owner/billing')} className="flex items-center justify-center space-x-2">
-            <span>New Sale (POS)</span>
-          </Button>
-          <Button onClick={() => navigate('/owner/inventory')} variant="secondary" className="flex items-center justify-center space-x-2">
-            <span>Manage Inventory</span>
-          </Button>
-          <Button onClick={() => navigate('/owner/purchases')} variant="secondary" className="flex items-center justify-center space-x-2">
-            <span>Add Purchase</span>
-          </Button>
-          <Button onClick={() => navigate('/owner/customers')} variant="secondary" className="flex items-center justify-center space-x-2">
-            <span>Add Customer</span>
-          </Button>
-        </div>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Low Stock Products */}
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-              <AlertTriangle className="w-5 h-5 text-red-500 mr-2" />
-              Low Stock Alert
-            </h2>
-            <Button onClick={() => navigate('/owner/inventory')} variant="outline" className="text-xs">
-              View All
-            </Button>
-          </div>
-          {low_stock && low_stock.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b text-gray-500">
-                    <th className="pb-2">Product</th>
-                    <th className="pb-2">Stock</th>
-                    <th className="pb-2">Min Stock</th>
-                    <th className="pb-2">Unit</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {low_stock.map((item, idx) => (
-                    <tr key={idx}>
-                      <td className="py-3 font-medium text-gray-900">{item.name}</td>
-                      <td className="py-3 text-red-600 font-bold">{item.current_stock}</td>
-                      <td className="py-3 text-gray-500">{item.minimum_stock}</td>
-                      <td className="py-3 text-gray-400">{item.unit}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-500 py-4 text-center">All products are sufficiently stocked.</p>
-          )}
-        </Card>
-
-        {/* Recent Sales */}
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-              <Clock className="w-5 h-5 text-indigo-500 mr-2" />
-              Recent Sales
-            </h2>
-            <Button onClick={() => navigate('/owner/sales')} variant="outline" className="text-xs">
-              View All
-            </Button>
-          </div>
-          {recent_sales && recent_sales.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b text-gray-500">
-                    <th className="pb-2">Bill #</th>
-                    <th className="pb-2">Customer</th>
-                    <th className="pb-2">Amount</th>
-                    <th className="pb-2">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {recent_sales.map((sale, idx) => (
-                    <tr key={idx}>
-                      <td className="py-3 font-semibold text-gray-900">BILL #{sale.id}</td>
-                      <td className="py-3 text-gray-600">{sale.customer_name || 'Walk-in Customer'}</td>
-                      <td className="py-3 font-bold text-gray-900">₹{sale.total_amount}</td>
-                      <td className="py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase ${
-                          sale.payment_status === 'PAID' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {sale.payment_status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-500 py-4 text-center">No recent sales recorded.</p>
-          )}
-        </Card>
-      </div>
-    </div>
-  );
+  const load = async () => { setLoading(true); setError(''); try { const response = await api.get('/dashboard'); if (!response.success) throw new Error(response.message); setData(response.data); } catch (err) { setError('Unable to load dashboard. Please try again.'); console.error(err); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, []);
+  const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening';
+  if (loading) return <div className="space-y-6"><div className="h-24 animate-pulse rounded-2xl bg-slate-200" /><div className="grid grid-cols-2 gap-4 lg:grid-cols-3">{[1, 2, 3, 4, 5, 6].map((item) => <div key={item} className="h-28 animate-pulse rounded-2xl bg-slate-200" />)}</div></div>;
+  if (error) return <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center"><AlertTriangle className="mx-auto h-8 w-8 text-red-600" /><p className="mt-3 font-bold text-red-800">{error}</p><button onClick={load} className="mt-4 rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white">Retry</button></div>;
+  const lowStock = data?.low_stock || []; const recentSales = data?.recent_sales || [];
+  return <div className="space-y-7"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-sm font-semibold text-emerald-700">{greeting}, keep the shelves moving.</p><h2 className="page-title mt-1 text-3xl font-extrabold">Business overview</h2><p className="mt-2 text-sm text-[var(--muted)]">A live view of today’s store operations.</p></div><button onClick={load} className="flex w-fit items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50"><RefreshCw className="h-4 w-4" /> Refresh</button></div>
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6"><Kpi icon={IndianRupee} label="Today's sales" value={formatCurrency(data?.today_sales)} tone="green" /><Kpi icon={ShoppingBag} label="Orders today" value={data?.today_sales_count || 0} tone="blue" /><Kpi icon={Package} label="Products" value={data?.total_products || 0} tone="violet" /><Kpi icon={AlertTriangle} label="Low stock" value={lowStock.length} tone="amber" /><Kpi icon={Users} label="Customer due" value={formatCurrency(data?.customer_due)} tone="orange" /><Kpi icon={Truck} label="Supplier due" value={formatCurrency(data?.supplier_due)} tone="red" /></div>
+    <div className="grid gap-6 xl:grid-cols-[1.15fr_.85fr]"><Card className="overflow-hidden p-0"><div className="flex items-center justify-between border-b border-[var(--line)] p-5"><div><h3 className="font-extrabold">Low stock watchlist</h3><p className="mt-1 text-xs text-[var(--muted)]">Items that need attention before the next rush.</p></div><button onClick={() => navigate('/owner/inventory')} className="flex items-center gap-1 text-xs font-bold text-emerald-700">View inventory <ArrowUpRight className="h-3.5 w-3.5" /></button></div>{lowStock.length ? <div className="divide-y divide-slate-100">{lowStock.map((item) => <div key={item.id || item.product_id} className="flex items-center justify-between gap-3 px-5 py-4"><div className="flex items-center gap-3"><ProductImage src={item.image_url} alt={item.name} size="sm" /><div><p className="text-sm font-bold">{item.name}</p><p className="text-xs text-slate-500">Minimum {item.minimum_stock} {item.unit}</p></div></div><div className="text-right"><p className="font-extrabold text-red-600">{item.current_stock}</p><p className="text-[11px] text-slate-500">remaining</p></div></div>)}</div> : <div className="p-10 text-center"><Package className="mx-auto h-8 w-8 text-emerald-600" /><p className="mt-2 text-sm font-bold">Everything is comfortably stocked</p></div>}</Card>
+      <Card className="overflow-hidden p-0"><div className="flex items-center justify-between border-b border-[var(--line)] p-5"><div><h3 className="font-extrabold">Recent transactions</h3><p className="mt-1 text-xs text-[var(--muted)]">The latest completed bills.</p></div><button onClick={() => navigate('/owner/sales')} className="flex items-center gap-1 text-xs font-bold text-emerald-700">All sales <ArrowUpRight className="h-3.5 w-3.5" /></button></div>{recentSales.length ? <div className="divide-y divide-slate-100">{recentSales.slice(0, 5).map((sale) => <div key={sale.id} className="flex items-center justify-between gap-3 px-5 py-4"><div><p className="text-sm font-bold">Bill #{sale.id}</p><p className="text-xs text-slate-500">{sale.customer_name || 'Walk-in customer'} · {formatDate(sale.created_at)}</p></div><div className="text-right"><p className="text-sm font-extrabold">{formatCurrency(sale.total_amount)}</p><span className={`status-badge ${sale.payment_status === 'PAID' ? 'status-success' : 'status-warning'}`}>{sale.payment_status?.toLowerCase()}</span></div></div>)}</div> : <div className="p-10 text-center text-sm text-slate-500">No sales recorded yet.</div>}</Card></div>
+    <div className="grid gap-4 sm:grid-cols-3"><QuickAction title="Start a sale" detail="Open the POS" onClick={() => navigate('/owner/billing')} /><QuickAction title="Add inventory" detail="Create a product" onClick={() => navigate('/owner/inventory')} /><QuickAction title="Record purchase" detail="Restock from supplier" onClick={() => navigate('/owner/purchases')} /></div>
+  </div>;
 }
+function Kpi({ icon: Icon, label, value, tone }) { const tones = { green: 'bg-emerald-50 text-emerald-700', blue: 'bg-blue-50 text-blue-700', violet: 'bg-violet-50 text-violet-700', amber: 'bg-amber-50 text-amber-700', orange: 'bg-orange-50 text-orange-700', red: 'bg-red-50 text-red-700' }; return <div className="surface rounded-2xl p-4"><div className={`mb-4 flex h-9 w-9 items-center justify-center rounded-xl ${tones[tone]}`}><Icon className="h-4 w-4" /></div><p className="text-xs font-semibold text-[var(--muted)]">{label}</p><p className="mt-1 truncate text-lg font-extrabold sm:text-xl">{value}</p></div>; }
+function QuickAction({ title, detail, onClick }) { return <button onClick={onClick} className="surface group rounded-2xl p-4 text-left transition hover:-translate-y-0.5 hover:border-emerald-200"><p className="text-sm font-extrabold group-hover:text-emerald-700">{title}</p><p className="mt-1 text-xs text-[var(--muted)]">{detail} <ArrowUpRight className="inline h-3 w-3" /></p></button>; }

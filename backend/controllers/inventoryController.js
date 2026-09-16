@@ -14,6 +14,7 @@ const getInventory = async (req, res) => {
                 p.selling_price,
                 p.purchase_price,
                 p.minimum_stock,
+                p.image_url,
                 COALESCE(i.quantity, 0) AS current_stock,
                 CASE
                     WHEN COALESCE(i.quantity, 0) <= p.minimum_stock
@@ -105,6 +106,13 @@ const updateStock = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: "Quantity and transaction type are required",
+            });
+        }
+
+        if (!reason || !String(reason).trim()) {
+            return res.status(400).json({
+                success: false,
+                message: "Reason is required",
             });
         }
 

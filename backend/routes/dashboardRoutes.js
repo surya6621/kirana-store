@@ -2,6 +2,7 @@ const express = require("express");
 
 const {
     getDashboard,
+    getPaymentHistory,
 } = require("../controllers/dashboardController");
 
 const {
@@ -10,6 +11,13 @@ const {
 } = require("../middleware/authMiddleware");
 
 const router = express.Router();
+
+router.get(
+    "/payment-history",
+    authenticate,
+    requireStaff,
+    getPaymentHistory
+);
 
 router.get(
     "/",

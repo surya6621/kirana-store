@@ -45,7 +45,7 @@ export function Sales() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Sales History</h1>
         <Button onClick={fetchSales} variant="outline" className="text-sm">
           Refresh
@@ -53,8 +53,8 @@ export function Sales() {
       </div>
 
       <Card>
-        <div className="flex items-center justify-between mb-6">
-          <div className="w-72">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="w-full sm:w-72">
             <Input
               placeholder="Search by ID, customer..."
               value={search}
@@ -67,7 +67,7 @@ export function Sales() {
         {error && <ErrorMessage message={error} />}
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="min-w-[720px] w-full text-left text-sm">
             <thead>
               <tr className="border-b text-gray-500">
                 <th className="pb-3">Bill Number</th>

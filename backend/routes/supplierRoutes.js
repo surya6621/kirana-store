@@ -6,6 +6,7 @@ const {
     getSupplierDues,
     getSupplierCreditHistory,
     recordSupplierPayment,
+    archiveSupplier,
 } = require("../controllers/supplierController");
 
 const {
@@ -27,6 +28,13 @@ router.post(
     authenticate,
     requireStaff,
     createSupplier
+);
+
+router.patch(
+    "/:supplierId/archive",
+    authenticate,
+    requireStaff,
+    archiveSupplier
 );
 
 router.get(

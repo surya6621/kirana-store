@@ -1,4 +1,10 @@
 const pool = require("../config/db");
+const {
+    getAllSupplierBalances,
+    getSupplierLiabilities,
+    removeSettledCredits,
+    roundMoney,
+} = require("../services/supplierBalance");
 
 // =========================================
 // GET ALL SUPPLIERS
@@ -14,6 +20,7 @@ const getSuppliers = async (req, res) => {
                 address,
                 created_at
             FROM suppliers
+            WHERE is_active = true
             ORDER BY name ASC
         `);
 
@@ -86,47 +93,28 @@ const createSupplier = async (req, res) => {
 // =========================================
 
 const getSupplierDues = async (req, res) => {
+    const client = await pool.connect();
     try {
-        const result = await pool.query(`
-            SELECT
-                s.id,
-                s.name,
-                s.phone,
-                COALESCE(
-                    SUM(
-                        CASE
-                            WHEN sct.transaction_type = 'CREDIT'
-                            THEN sct.amount
-                            WHEN sct.transaction_type = 'PAYMENT'
-                            THEN -sct.amount
-                            ELSE 0
-                        END
-                    ),
-                    0
-                ) AS total_due
-            FROM suppliers s
-            LEFT JOIN supplier_credit_transactions sct
-                ON s.id = sct.supplier_id
-            GROUP BY
-                s.id,
-                s.name,
-                s.phone
-            ORDER BY
-                total_due DESC,
-                s.name ASC
-        `);
+        await client.query("BEGIN");
+        const data = (await getAllSupplierBalances(client, true)).filter((supplier) => supplier.is_active);
+
+        await client.query("COMMIT");
+        data.sort((left, right) => Number(right.total_due) - Number(left.total_due) || left.name.localeCompare(right.name));
 
         res.json({
             success: true,
-            data: result.rows,
+            data,
         });
     } catch (error) {
+        await client.query("ROLLBACK");
         console.error("Get supplier dues error:", error);
 
         res.status(500).json({
             success: false,
             message: "Failed to get supplier dues",
         });
+    } finally {
+        client.release();
     }
 };
 
@@ -136,6 +124,7 @@ const getSupplierDues = async (req, res) => {
 // =========================================
 
 const getSupplierCreditHistory = async (req, res) => {
+    const client = await pool.connect();
     try {
         const { supplierId } = req.params;
 
@@ -153,7 +142,7 @@ const getSupplierCreditHistory = async (req, res) => {
             });
         }
 
-        const historyResult = await pool.query(
+        const historyResult = await client.query(
             `SELECT
                 sct.id,
                 sct.transaction_type,
@@ -169,12 +158,24 @@ const getSupplierCreditHistory = async (req, res) => {
              ORDER BY sct.created_at DESC`,
             [supplierId]
         );
+        const liabilities = await getSupplierLiabilities(client, supplierId);
 
         res.json({
             success: true,
             data: {
                 supplier: supplierResult.rows[0],
                 history: historyResult.rows,
+                outstanding_purchases: liabilities
+                    .filter((item) => item.dueAmount > 0)
+                    .map((item) => ({
+                        purchase_id: item.purchase_id,
+                        original_amount: item.originalAmount,
+                        paid_amount: item.paidAmount,
+                        due_amount: item.dueAmount,
+                    })),
+                current_due: roundMoney(
+                    liabilities.reduce((total, item) => total + item.dueAmount, 0)
+                ),
             },
         });
     } catch (error) {
@@ -184,12 +185,35 @@ const getSupplierCreditHistory = async (req, res) => {
             success: false,
             message: "Failed to get supplier credit history",
         });
+    } finally {
+        client.release();
     }
 };
 
 // =========================================
 // RECORD SUPPLIER PAYMENT
 // =========================================
+
+const archiveSupplier = async (req, res) => {
+    try {
+        const result = await pool.query(
+            `UPDATE suppliers
+             SET is_active = false
+             WHERE id = $1 AND is_active = true
+             RETURNING id, name, is_active`,
+            [req.params.supplierId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Active supplier not found" });
+        }
+
+        res.json({ success: true, message: "Supplier removed from active suppliers", data: result.rows[0] });
+    } catch (error) {
+        console.error("Archive supplier error:", error);
+        res.status(500).json({ success: false, message: "Unable to remove supplier" });
+    }
+};
 
 const recordSupplierPayment = async (req, res) => {
     const client = await pool.connect();
@@ -242,28 +266,9 @@ const recordSupplierPayment = async (req, res) => {
             });
         }
 
-        // Calculate current supplier due
-        const dueResult = await client.query(
-            `SELECT
-                COALESCE(
-                    SUM(
-                        CASE
-                            WHEN transaction_type = 'CREDIT'
-                            THEN amount
-                            WHEN transaction_type = 'PAYMENT'
-                            THEN -amount
-                            ELSE 0
-                        END
-                    ),
-                    0
-                ) AS total_due
-             FROM supplier_credit_transactions
-             WHERE supplier_id = $1`,
-            [supplierId]
-        );
-
-        const currentDue = Number(
-            dueResult.rows[0].total_due
+        const liabilities = await getSupplierLiabilities(client, supplierId, true);
+        const currentDue = roundMoney(
+            liabilities.reduce((total, item) => total + item.dueAmount, 0)
         );
 
         if (currentDue <= 0) {
@@ -286,33 +291,60 @@ const recordSupplierPayment = async (req, res) => {
             });
         }
 
-        const remainingDue = Number(
-            (currentDue - paymentAmount).toFixed(2)
-        );
+        let remainingPayment = paymentAmount;
+        const paymentDescription = description
+            ? `${description} via ${payment_method}`
+            : `Supplier payment via ${payment_method}`;
+        for (const liability of liabilities) {
+            if (remainingPayment <= 0 || liability.dueAmount <= 0) break;
+            const applied = roundMoney(Math.min(remainingPayment, liability.dueAmount));
+            await client.query(
+                `INSERT INTO supplier_credit_transactions (
+                    supplier_id,
+                    purchase_id,
+                    transaction_type,
+                    amount,
+                    description,
+                    created_by
+                )
+                VALUES ($1, $2, 'PAYMENT', $3, $4, $5)`,
+                [
+                    supplierId,
+                    liability.purchase_id,
+                    applied,
+                    paymentDescription,
+                    req.user.userId,
+                ]
+            );
+            remainingPayment = roundMoney(remainingPayment - applied);
+        }
 
-        // Record supplier payment
-        await client.query(
-            `INSERT INTO supplier_credit_transactions (
-                supplier_id,
-                transaction_type,
-                amount,
-                description,
-                created_by
-            )
-            VALUES (
-                $1,
-                'PAYMENT',
-                $2,
-                $3,
-                $4
-            )`,
-            [
-                supplierId,
-                paymentAmount,
-                description ||
-                    `Supplier payment via ${payment_method}`,
-                req.user.userId,
-            ]
+        const updatedLiabilities = await getSupplierLiabilities(client, supplierId, true);
+        for (const liability of updatedLiabilities) {
+            const purchaseResult = await client.query(
+                `SELECT total_amount
+                 FROM purchases
+                 WHERE id = $1
+                 FOR UPDATE`,
+                [liability.purchase_id]
+            );
+            if (purchaseResult.rows.length === 0) continue;
+
+            const totalAmount = roundMoney(purchaseResult.rows[0].total_amount);
+            const paidAmount = roundMoney(totalAmount - liability.dueAmount);
+            const paymentStatus = liability.dueAmount <= 0
+                ? "PAID"
+                : paidAmount > 0 ? "PARTIAL" : "PENDING";
+            await client.query(
+                `UPDATE purchases
+                 SET amount_paid = $1, payment_status = $2
+                 WHERE id = $3`,
+                [paidAmount, paymentStatus, liability.purchase_id]
+            );
+        }
+        await removeSettledCredits(client, updatedLiabilities);
+        const updatedDue = roundMoney(
+            updatedLiabilities.reduce((total, item) => total + item.dueAmount, 0)
         );
 
         await client.query("COMMIT");
@@ -327,7 +359,7 @@ const recordSupplierPayment = async (req, res) => {
                 payment_method,
                 amount_paid: paymentAmount,
                 previous_due: currentDue,
-                remaining_due: remainingDue,
+                remaining_due: updatedDue,
             },
         });
 
@@ -354,4 +386,5 @@ module.exports = {
     getSupplierDues,
     getSupplierCreditHistory,
     recordSupplierPayment,
+    archiveSupplier,
 };

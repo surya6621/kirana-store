@@ -6,6 +6,7 @@ const {
     getCustomerCreditHistory,
     recordCustomerPayment,
     getAllCustomerPayments,
+    archiveCustomer,
 } = require("../controllers/customerController");
 
 const {
@@ -27,6 +28,13 @@ router.post(
     authenticate,
     requireStaff,
     createCustomer
+);
+
+router.patch(
+    "/:customerId/archive",
+    authenticate,
+    requireStaff,
+    archiveCustomer
 );
 
 router.post(

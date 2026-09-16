@@ -7,7 +7,7 @@ export function Receipt({ sale, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden print:shadow-none print:m-0 print:w-full">
+      <div className="modal-window bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden print:shadow-none print:m-0 print:w-full">
         <div className="p-6 print:p-2 space-y-4">
           <div className="text-center border-b pb-4">
             <h2 className="text-xl font-bold text-gray-900">Kirana Store</h2>

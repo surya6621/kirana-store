@@ -9,6 +9,7 @@ const getCustomers = async (req, res) => {
         const result = await pool.query(`
             SELECT
                 c.id,
+                c.customer_code,
                 c.name,
                 c.phone,
                 c.address,
@@ -28,12 +29,14 @@ const getCustomers = async (req, res) => {
             FROM customers c
             LEFT JOIN customer_credit_transactions ct
                 ON c.id = ct.customer_id
+            WHERE c.is_active = true
             GROUP BY
                 c.id,
                 c.name,
                 c.phone,
                 c.address,
-                c.created_at
+                c.created_at,
+                c.customer_code
             ORDER BY c.name ASC
         `);
 
@@ -48,6 +51,27 @@ const getCustomers = async (req, res) => {
             success: false,
             message: "Failed to get customers",
         });
+    }
+};
+
+const archiveCustomer = async (req, res) => {
+    try {
+        const result = await pool.query(
+            `UPDATE customers
+             SET is_active = false
+             WHERE id = $1 AND is_active = true
+            RETURNING id, customer_code, name, is_active`,
+            [req.params.customerId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Active customer not found" });
+        }
+
+        res.json({ success: true, message: "Customer removed from active customers", data: result.rows[0] });
+    } catch (error) {
+        console.error("Archive customer error:", error);
+        res.status(500).json({ success: false, message: "Unable to remove customer" });
     }
 };
 
@@ -118,7 +142,7 @@ const getCustomerCreditHistory = async (req, res) => {
         const { customerId } = req.params;
 
         const customerResult = await pool.query(
-            `SELECT id, name, phone, address
+            `SELECT id, customer_code, name, phone, address
              FROM customers
              WHERE id = $1`,
             [customerId]
@@ -340,6 +364,11 @@ const recordCustomerPayment = async (req, res) => {
         const remainingDue = Number(
             (currentDue - paymentAmount).toFixed(2)
         );
+        const paymentDescription = description
+            ? `${description} via ${payment_method}`
+            : targetSaleId
+                ? `Payment for Bill #${targetSaleId} via ${payment_method}`
+                : `Customer payment via ${payment_method}`;
 
         // Record payment in payments table if targetSaleId exists, or record customer payment transaction
         if (targetSaleId) {
@@ -382,8 +411,7 @@ const recordCustomerPayment = async (req, res) => {
                 customerId,
                 targetSaleId,
                 paymentAmount,
-                description ||
-                    (targetSaleId ? `Payment for Bill #${targetSaleId} via ${payment_method}` : `Customer payment via ${payment_method}`),
+                paymentDescription,
                 req.user.userId,
             ]
         );
@@ -433,6 +461,7 @@ const getAllCustomerPayments = async (req, res) => {
                 ct.id AS payment_id,
                 ct.customer_id,
                 c.name AS customer_name,
+                c.customer_code,
                 c.phone AS customer_phone,
                 ct.sale_id,
                 CASE
@@ -477,4 +506,5 @@ module.exports = {
     getCustomerCreditHistory,
     recordCustomerPayment,
     getAllCustomerPayments,
+    archiveCustomer,
 };

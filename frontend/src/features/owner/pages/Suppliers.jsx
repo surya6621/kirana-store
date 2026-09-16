@@ -5,7 +5,7 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Loader } from '../../../components/ui/Loader';
 import { ErrorMessage } from '../../../components/ui/ErrorMessage';
-import { Plus, X, CreditCard, History } from 'lucide-react';
+import { Plus, X, CreditCard, History, Archive } from 'lucide-react';
 
 export function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
@@ -21,12 +21,15 @@ export function Suppliers() {
   const [paySupplier, setPaySupplier] = useState(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [paymentError, setPaymentError] = useState('');
+  const [paymentLoading, setPaymentLoading] = useState(false);
 
   // History Modal
   const [historySupplier, setHistorySupplier] = useState(null);
   const [historyData, setHistoryData] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState(null);
+  const [archivingSupplierId, setArchivingSupplierId] = useState(null);
 
   useEffect(() => {
     fetchSuppliers();
@@ -66,6 +69,22 @@ export function Suppliers() {
     }
   };
 
+  const archiveSupplier = async (supplier) => {
+    const confirmed = window.confirm(`${supplier.name} will be removed from active suppliers. Existing purchases, payments and transaction history will be preserved.`);
+    if (!confirmed || archivingSupplierId) return;
+    setArchivingSupplierId(supplier.id);
+    setError(null);
+    try {
+      const response = await api.patch(`/suppliers/${supplier.id}/archive`);
+      if (!response.success) throw new Error(response.message || 'Unable to remove supplier.');
+      await fetchSuppliers();
+    } catch (err) {
+      setError(err.message || 'Unable to remove supplier. Please try again.');
+    } finally {
+      setArchivingSupplierId(null);
+    }
+  };
+
   const handleAddSupplier = async (e) => {
     e.preventDefault();
     try {
@@ -86,24 +105,40 @@ export function Suppliers() {
     e.preventDefault();
     if (!paySupplier) return;
 
+    const outstanding = Number(paySupplier.total_due || paySupplier.current_due || paySupplier.due_amount || 0);
+    const amount = Number(paymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setPaymentError('Payment amount must be greater than ₹0.');
+      return;
+    }
+    if (amount > outstanding) {
+      setPaymentError(`Payment cannot exceed the outstanding amount of ₹${outstanding.toFixed(2)}.`);
+      return;
+    }
+
     try {
+      setPaymentLoading(true);
+      setPaymentError('');
       const res = await api.post(`/suppliers/${paySupplier.id}/payments`, {
-        amount: Number(paymentAmount),
+        amount,
         payment_method: paymentMethod
       });
 
       if (res.success) {
         setPaySupplier(null);
         setPaymentAmount('');
-        fetchSuppliers();
+        setPaymentError('');
+        await fetchSuppliers();
         if (historySupplier && historySupplier.id === paySupplier.id) {
-          fetchHistory(paySupplier);
+          await fetchHistory(paySupplier);
         }
       } else {
-        alert(res.message || 'Payment recording failed');
+        setPaymentError(res.message || 'Payment failed. Please try again.');
       }
     } catch (err) {
-      alert(err.message);
+      setPaymentError(err.message || 'Payment failed. Please try again.');
+    } finally {
+      setPaymentLoading(false);
     }
   };
 
@@ -118,14 +153,14 @@ export function Suppliers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Suppliers Management</h1>
           <p className="text-sm text-gray-600 mt-1">
             Total Suppliers: <span className="font-semibold text-gray-900">{suppliers.length}</span> | Total Supplier Due: <span className="font-bold text-red-600">₹{totalSupplierDue}</span>
           </p>
         </div>
-        <div className="flex space-x-3">
+        <div className="flex w-full flex-wrap gap-3 sm:w-auto">
           <Button onClick={() => setShowAddModal(true)} className="flex items-center space-x-2 text-sm">
             <Plus className="w-4 h-4" />
             <span>Add Supplier</span>
@@ -137,8 +172,8 @@ export function Suppliers() {
       </div>
 
       <Card>
-        <div className="flex items-center justify-between mb-6">
-          <div className="w-72">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="w-full sm:w-72">
             <Input
               placeholder="Search by name or phone..."
               value={search}
@@ -151,7 +186,7 @@ export function Suppliers() {
         {error && <ErrorMessage message={error} />}
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="min-w-[640px] w-full text-left text-sm">
             <thead>
               <tr className="border-b text-gray-500">
                 <th className="pb-3">Supplier Name</th>
@@ -184,7 +219,7 @@ export function Suppliers() {
                         </Button>
                         {due > 0 ? (
                           <Button
-                            onClick={() => setPaySupplier(s)}
+                            onClick={() => { setPaymentError(''); setPaymentAmount(''); setPaySupplier(s); }}
                             variant="outline"
                             className="text-xs px-2.5 py-1 inline-flex items-center space-x-1 text-red-600 border-red-300 hover:bg-red-50"
                           >
@@ -194,6 +229,16 @@ export function Suppliers() {
                         ) : (
                           <span className="text-gray-400 text-xs px-2">No Due</span>
                         )}
+                        <Button
+                          onClick={() => archiveSupplier(s)}
+                          variant="outline"
+                          disabled={archivingSupplierId === s.id}
+                          aria-label={`Remove ${s.name} from active suppliers`}
+                          className="text-xs px-2.5 py-1 inline-flex items-center space-x-1 text-red-600 border-red-300 hover:bg-red-50"
+                        >
+                          <Archive className="w-3.5 h-3.5" />
+                          <span>{archivingSupplierId === s.id ? 'Removing...' : 'Remove'}</span>
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -207,7 +252,7 @@ export function Suppliers() {
       {/* Add Supplier Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+          <div className="modal-window bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="text-lg font-bold text-gray-900">Add New Supplier</h3>
               <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -254,7 +299,7 @@ export function Suppliers() {
       {/* Pay Supplier Modal */}
       {paySupplier && (
         <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+          <div className="modal-window bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="text-lg font-bold text-gray-900">Pay Supplier: {paySupplier.name}</h3>
               <button onClick={() => setPaySupplier(null)} className="text-gray-400 hover:text-gray-600">
@@ -277,6 +322,8 @@ export function Suppliers() {
                 required
               />
 
+              {paymentError && <p className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{paymentError}</p>}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
                 <select
@@ -293,7 +340,9 @@ export function Suppliers() {
                 <Button type="button" variant="secondary" onClick={() => setPaySupplier(null)}>
                   Cancel
                 </Button>
-                <Button type="submit">Record Payment</Button>
+                <Button type="submit" disabled={paymentLoading}>
+                  {paymentLoading ? 'Recording...' : 'Record Payment'}
+                </Button>
               </div>
             </form>
           </div>
@@ -303,7 +352,7 @@ export function Suppliers() {
       {/* Supplier Transaction History Modal */}
       {historySupplier && (
         <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="modal-window bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 space-y-4">
             <div className="flex justify-between items-center border-b pb-3">
               <div>
                 <h3 className="text-lg font-bold text-gray-900">Transaction History: {historySupplier.name}</h3>
@@ -322,11 +371,12 @@ export function Suppliers() {
                 <div className="bg-gray-50 p-4 rounded-lg flex justify-between items-center">
                   <div>
                     <span className="text-xs text-gray-500 uppercase font-medium">Current Outstanding Due</span>
-                    <h4 className="text-xl font-bold text-red-600">₹{historySupplier.total_due || historySupplier.current_due || 0}</h4>
+                    <h4 className="text-xl font-bold text-red-600">₹{Number(historyData.current_due ?? historySupplier.total_due ?? historySupplier.current_due ?? 0).toFixed(2)}</h4>
                   </div>
                   <div>
                     <Button 
-                      onClick={() => { setPaySupplier(historySupplier); setHistorySupplier(null); }}
+                      disabled={Number(historyData.current_due ?? historySupplier.total_due ?? historySupplier.current_due ?? 0) <= 0}
+                      onClick={() => { setPaymentError(''); setPaymentAmount(''); setPaySupplier({ ...historySupplier, total_due: historyData.current_due }); setHistorySupplier(null); }}
                       className="text-xs py-1.5"
                     >
                       Pay Due Now
@@ -334,8 +384,22 @@ export function Suppliers() {
                   </div>
                 </div>
 
+                {historyData.outstanding_purchases?.length > 0 && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <h4 className="mb-3 text-sm font-bold text-amber-900">Outstanding purchases</h4>
+                    <div className="space-y-2">
+                      {historyData.outstanding_purchases.map((purchase) => (
+                        <div key={purchase.purchase_id} className="flex items-center justify-between text-sm">
+                          <span className="font-semibold text-amber-900">Purchase #{purchase.purchase_id}</span>
+                          <span className="font-bold text-red-700">₹{Number(purchase.due_amount).toFixed(2)} due</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
+                  <table className="min-w-[640px] w-full text-left text-sm">
                     <thead>
                       <tr className="border-b text-gray-500">
                         <th className="pb-2">Date & Time</th>
