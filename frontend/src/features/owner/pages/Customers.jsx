@@ -5,7 +5,7 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Loader } from '../../../components/ui/Loader';
 import { ErrorMessage } from '../../../components/ui/ErrorMessage';
-import { Plus, X, CreditCard, Printer } from 'lucide-react';
+import { Plus, X, CreditCard, Printer, Archive } from 'lucide-react';
 
 function formatDate(dateStr) {
   if (!dateStr) return '-';
@@ -114,6 +114,7 @@ export function Customers() {
   // Add Customer Modal
   const [showAddModal, setShowAddModal] = useState(false);
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', address: '' });
+  const [createdCustomerCode, setCreatedCustomerCode] = useState('');
 
   // Receive Payment Modal & Pay Specific Bill Modal
   const [payCustomer, setPayCustomer] = useState(null);
@@ -124,6 +125,7 @@ export function Customers() {
   const [billPaymentAmount, setBillPaymentAmount] = useState('');
   const [billPaymentMethod, setBillPaymentMethod] = useState('CASH');
   const [billPaymentLoading, setBillPaymentLoading] = useState(false);
+  const [archivingCustomerId, setArchivingCustomerId] = useState(null);
 
   // Fetch all customers
   const fetchCustomers = async () => {
@@ -146,6 +148,23 @@ export function Customers() {
     fetchCustomers();
   }, []);
 
+  const archiveCustomer = async (customer) => {
+    const confirmed = window.confirm(`${getCustomerName(customer)} will be removed from active customers. Existing bills, payments and transaction history will be preserved.`);
+    if (!confirmed || archivingCustomerId) return;
+    setArchivingCustomerId(customer.id);
+    setError(null);
+    try {
+      const response = await api.patch(`/customers/${customer.id}/archive`);
+      if (!response.success) throw new Error(response.message || 'Unable to remove customer.');
+      if (selectedCustomer && String(selectedCustomer.id) === String(customer.id)) setSelectedCustomer(null);
+      await fetchCustomers();
+    } catch (err) {
+      setError(err.message || 'Unable to remove customer. Please try again.');
+    } finally {
+      setArchivingCustomerId(null);
+    }
+  };
+
   // Filter to only outstanding customers (due > 0)
   const outstandingCustomers = useMemo(() => {
     return customers.filter(c => {
@@ -159,6 +178,7 @@ export function Customers() {
     const term = search.toLowerCase().trim();
     if (!term) return outstandingCustomers;
     return outstandingCustomers.filter(c =>
+      c.customer_code?.toLowerCase().includes(term) ||
       c.name?.toLowerCase().includes(term) ||
       c.phone?.toLowerCase().includes(term) ||
       c.phone?.includes(term)
@@ -234,9 +254,9 @@ export function Customers() {
     try {
       const res = await api.post('/customers', customerForm);
       if (res.success) {
-        setShowAddModal(false);
+        setCreatedCustomerCode(res.data?.customer_code || '');
         setCustomerForm({ name: '', phone: '', address: '' });
-        fetchCustomers();
+        await fetchCustomers();
       } else {
         alert(res.message || 'Failed to add customer');
       }
@@ -346,8 +366,8 @@ export function Customers() {
             Total Outstanding Udhaar: <span className="font-bold text-orange-600">₹{totalOutstandingUdhaar.toFixed(2)}</span>
           </p>
         </div>
-        <div className="flex space-x-3">
-          <Button onClick={() => setShowAddModal(true)} className="flex items-center space-x-2 text-sm">
+        <div className="flex w-full flex-wrap gap-3 md:w-auto">
+          <Button onClick={() => { setCreatedCustomerCode(''); setShowAddModal(true); }} className="flex items-center space-x-2 text-sm">
             <Plus className="w-4 h-4" />
             <span>Add Customer</span>
           </Button>
@@ -359,11 +379,11 @@ export function Customers() {
 
       {/* Outstanding Customers List */}
       <Card>
-        <div className="flex items-center justify-between mb-6">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg font-bold text-gray-900">Outstanding Customers</h2>
-          <div className="w-72">
+          <div className="w-full sm:w-72">
             <Input
-              placeholder="Search by name or phone..."
+              placeholder="Search by Customer ID, name or phone..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="mb-0"
@@ -374,9 +394,10 @@ export function Customers() {
         {error && <ErrorMessage message={error} />}
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="min-w-[680px] w-full text-left text-sm">
             <thead>
               <tr className="border-b text-gray-500">
+                <th className="pb-3">Customer ID</th>
                 <th className="pb-3">Customer Name</th>
                 <th className="pb-3">Phone</th>
                 <th className="pb-3">Outstanding Bills</th>
@@ -387,7 +408,7 @@ export function Customers() {
             <tbody className="divide-y">
               {filteredOutstandingCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="text-center py-6 text-gray-500">
+                  <td colSpan="6" className="text-center py-6 text-gray-500">
                     {search ? 'No matching customers found.' : 'No outstanding customers.'}
                   </td>
                 </tr>
@@ -401,6 +422,7 @@ export function Customers() {
                       className={`hover:bg-gray-50 cursor-pointer transition-colors ${isSelected ? 'bg-indigo-50' : ''}`}
                       onClick={() => loadCustomerDetail(c)}
                     >
+                      <td className="py-4 font-mono text-xs font-bold text-emerald-700">{c.customer_code}</td>
                       <td className="py-4 font-semibold text-gray-900">{getCustomerName(c)}</td>
                       <td className="py-4 text-gray-600">{getCustomerPhone(c)}</td>
                       <td className="py-4 text-gray-600">
@@ -415,15 +437,27 @@ export function Customers() {
                           ₹{due}
                         </span>
                       </td>
-                      <td className="py-4 text-center">
+                      <td className="py-4 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-2">
                         <Button
                           onClick={(e) => { e.stopPropagation(); loadCustomerDetail(c); }}
                           variant="outline"
-                          className="text-xs px-2.5 py-1 flex items-center space-x-1 mx-auto text-indigo-600 border-indigo-300 hover:bg-indigo-50"
+                          className="min-w-[7rem] text-xs px-2.5 py-1 flex items-center justify-center space-x-1 text-indigo-600 border-indigo-300 hover:bg-indigo-50"
                         >
                           <CreditCard className="w-3.5 h-3.5" />
                           <span>View Bills</span>
                         </Button>
+                        <Button
+                          onClick={(e) => { e.stopPropagation(); archiveCustomer(c); }}
+                          variant="outline"
+                          disabled={archivingCustomerId === c.id}
+                          aria-label={`Remove ${getCustomerName(c)} from active customers`}
+                          className="min-w-[5.5rem] flex items-center justify-center space-x-1 text-xs text-red-600 border-red-300 hover:bg-red-50"
+                        >
+                          <Archive className="h-3.5 w-3.5" />
+                          <span>{archivingCustomerId === c.id ? 'Removing...' : 'Remove'}</span>
+                        </Button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -442,6 +476,9 @@ export function Customers() {
               <h2 className="text-lg font-bold text-gray-900">
                 {getCustomerName(selectedCustomer)}
               </h2>
+              <p className="text-sm text-gray-500">
+                Customer ID: {selectedCustomer.customer_code || '-'}
+              </p>
               <p className="text-sm text-gray-500">
                 Phone: {getCustomerPhone(selectedCustomer)}
               </p>
@@ -496,7 +533,7 @@ export function Customers() {
                             Date: {formatDate(bill.created_at)}
                           </p>
                         </div>
-                        <div className="flex items-center space-x-4">
+                        <div className="grid grid-cols-2 gap-3 sm:flex sm:items-center sm:space-x-4">
                           <div className="text-right">
                             <p className="text-sm text-gray-500">Total</p>
                             <p className="font-semibold text-gray-900">₹{bill.total_credited}</p>
@@ -512,7 +549,7 @@ export function Customers() {
                           <Button
                             onClick={() => openReceiptModal(bill, selectedCustomer)}
                             variant="outline"
-                            className="text-xs px-2 py-1 flex items-center space-x-1"
+                            className="col-span-2 flex items-center space-x-1 text-xs sm:col-span-1"
                           >
                             <Printer className="w-3.5 h-3.5" />
                             <span>Receipt</span>
@@ -531,7 +568,7 @@ export function Customers() {
       {/* Add Customer Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+          <div className="modal-window bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="text-lg font-bold text-gray-900">Add New Customer</h3>
               <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -539,7 +576,9 @@ export function Customers() {
               </button>
             </div>
 
-            <form onSubmit={handleAddCustomer} className="space-y-4">
+            {createdCustomerCode && <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3"><p className="text-sm font-semibold text-emerald-800">Customer Created</p><p className="mt-1 text-sm text-emerald-700">Customer ID: <strong>{createdCustomerCode}</strong></p><button type="button" onClick={() => { setCreatedCustomerCode(''); setShowAddModal(false); }} className="mt-3 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Done</button></div>}
+
+            {!createdCustomerCode && <form onSubmit={handleAddCustomer} className="space-y-4">
               <Input
                 label="Customer Name"
                 value={customerForm.name}
@@ -564,7 +603,7 @@ export function Customers() {
                 </Button>
                 <Button type="submit">Add Customer</Button>
               </div>
-            </form>
+            </form>}
           </div>
         </div>
       )}
@@ -572,7 +611,7 @@ export function Customers() {
       {/* Receive Payment Modal */}
       {payCustomer && (
         <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+          <div className="modal-window bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="text-lg font-bold text-gray-900">Receive Udhaar: {getCustomerName(payCustomer)}</h3>
               <button onClick={() => setPayCustomer(null)} className="text-gray-400 hover:text-gray-600">
@@ -639,7 +678,7 @@ export function Customers() {
       {/* Pay Specific Bill Modal */}
       {payBill && selectedCustomer && (
         <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+          <div className="modal-window bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="text-lg font-bold text-gray-900">Pay {payBill.bill_number}</h3>
               <button onClick={() => setPayBill(null)} className="text-gray-400 hover:text-gray-600">
@@ -705,7 +744,7 @@ export function Customers() {
       {/* Receipt Modal */}
       {receiptSale && (
         <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full overflow-hidden">
+          <div className="modal-window bg-white rounded-lg shadow-xl max-w-lg w-full overflow-hidden">
             <div className="p-6 space-y-4">
               <div className="flex justify-between items-center border-b pb-3">
                 <h3 className="text-lg font-bold text-gray-900">Receipt</h3>

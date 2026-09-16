@@ -115,9 +115,9 @@ export function Purchases() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Purchases Management</h1>
-        <div className="flex space-x-3">
+        <div className="flex w-full flex-wrap gap-3 sm:w-auto">
           <Button onClick={() => setShowModal(true)} className="flex items-center space-x-2 text-sm">
             <Plus className="w-4 h-4" />
             <span>New Purchase</span>
@@ -131,7 +131,7 @@ export function Purchases() {
       <Card>
         {error && <ErrorMessage message={error} />}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto sm:block">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b text-gray-500">
@@ -168,12 +168,20 @@ export function Purchases() {
             </tbody>
           </table>
         </div>
+        <div className="space-y-3 sm:hidden">
+          {purchases.length === 0 ? <p className="py-6 text-center text-gray-500">No purchases recorded.</p> : purchases.map((p) => {
+            const total = Number(p.total_amount || 0);
+            const paid = Number(p.amount_paid || 0);
+            const due = p.due_amount !== undefined ? Number(p.due_amount) : Math.max(0, total - paid);
+            return <article key={p.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-gray-900">Purchase #{p.id}</p><p className="mt-1 text-xs text-gray-500">{new Date(p.created_at).toLocaleString()}</p></div><span className="text-sm font-bold text-red-600">Due ₹{due}</span></div><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Supplier</p><p className="mt-1 font-semibold text-gray-900 break-words">{p.supplier_name || 'Unknown Supplier'}</p></div><div><p className="text-xs text-gray-500">Total</p><p className="mt-1 font-bold">₹{total}</p></div><div><p className="text-xs text-gray-500">Paid</p><p className="mt-1 font-medium text-green-600">₹{paid}</p></div></div></article>;
+          })}
+        </div>
       </Card>
 
       {/* New Purchase Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="modal-window bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 space-y-4">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="text-lg font-bold text-gray-900">New Purchase Order</h3>
               <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -207,8 +215,8 @@ export function Purchases() {
 
                 <div className="space-y-3">
                   {purchaseItems.map((item, index) => (
-                    <div key={index} className="flex items-center space-x-2 bg-gray-50 p-3 rounded-lg">
-                      <div className="flex-1">
+                    <div key={index} className="grid gap-2 bg-gray-50 p-3 rounded-lg sm:grid-cols-[minmax(0,1fr)_6rem_7rem_auto] sm:items-center">
+                      <div className="min-w-0">
                         <select
                           value={item.product_id}
                           onChange={(e) => updateItemRow(index, 'product_id', e.target.value)}
@@ -221,7 +229,7 @@ export function Purchases() {
                           ))}
                         </select>
                       </div>
-                      <div className="w-24">
+                      <div className="w-full sm:w-24">
                         <input
                           type="number"
                           placeholder="Qty"
@@ -231,7 +239,7 @@ export function Purchases() {
                           required
                         />
                       </div>
-                      <div className="w-28">
+                      <div className="w-full sm:w-28">
                         <input
                           type="number"
                           step="0.01"
