@@ -3,6 +3,7 @@ const express = require("express");
 const {
     getSuppliers,
     createSupplier,
+    updateSupplier,
     getSupplierDues,
     getSupplierCreditHistory,
     recordSupplierPayment,
@@ -35,6 +36,13 @@ router.patch(
     authenticate,
     requireStaff,
     archiveSupplier
+);
+
+router.patch(
+    "/:supplierId",
+    authenticate,
+    requireStaff,
+    updateSupplier
 );
 
 router.get(

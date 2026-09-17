@@ -6,6 +6,8 @@ const pool = require("../config/db");
 
 const getInventory = async (req, res) => {
     try {
+        const includeAll = req.query.status === "all";
+        const activeStatus = req.query.status !== "archived";
         const result = await pool.query(`
             SELECT
                 p.id AS product_id,
@@ -15,6 +17,7 @@ const getInventory = async (req, res) => {
                 p.purchase_price,
                 p.minimum_stock,
                 p.image_url,
+                p.is_active,
                 COALESCE(i.quantity, 0) AS current_stock,
                 CASE
                     WHEN COALESCE(i.quantity, 0) <= p.minimum_stock
@@ -27,9 +30,9 @@ const getInventory = async (req, res) => {
                 ON p.category_id = c.id
             LEFT JOIN inventory i
                 ON p.id = i.product_id
-            WHERE p.is_active = true
+            WHERE ($1 OR p.is_active = $2)
             ORDER BY p.name ASC
-        `);
+        `, [includeAll, activeStatus]);
 
         res.json({
             success: true,

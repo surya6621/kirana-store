@@ -5,7 +5,7 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Loader } from '../../../components/ui/Loader';
 import { ErrorMessage } from '../../../components/ui/ErrorMessage';
-import { Plus, X, CreditCard, Printer, Archive } from 'lucide-react';
+import { Plus, X, CreditCard, Printer, Archive, Edit } from 'lucide-react';
 
 function formatDate(dateStr) {
   if (!dateStr) return '-';
@@ -115,6 +115,11 @@ export function Customers() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', address: '' });
   const [createdCustomerCode, setCreatedCustomerCode] = useState('');
+  const [editCustomer, setEditCustomer] = useState(null);
+  const [editCustomerForm, setEditCustomerForm] = useState({ name: '', phone: '', address: '' });
+  const [editCustomerErrors, setEditCustomerErrors] = useState({});
+  const [editCustomerSaving, setEditCustomerSaving] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   // Receive Payment Modal & Pay Specific Bill Modal
   const [payCustomer, setPayCustomer] = useState(null);
@@ -265,6 +270,71 @@ export function Customers() {
     }
   };
 
+  const openEditCustomer = (customer) => {
+    setEditCustomer(customer);
+    setEditCustomerForm({
+      name: customer.name || '',
+      phone: customer.phone || '',
+      address: customer.address || '',
+    });
+    setEditCustomerErrors({});
+  };
+
+  const validateEditCustomer = () => {
+    const next = {};
+    if (!editCustomerForm.name.trim()) next.name = 'Customer name is required.';
+    if (editCustomerForm.phone.trim() && !/^[0-9+\-\s()]{6,20}$/.test(editCustomerForm.phone.trim())) {
+      next.phone = 'Enter a valid phone number.';
+    }
+    setEditCustomerErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
+  const handleEditCustomer = async (e) => {
+    e.preventDefault();
+    if (!editCustomer || !validateEditCustomer()) return;
+
+    try {
+      setEditCustomerSaving(true);
+      setEditCustomerErrors({});
+      const res = await api.patch(`/customers/${editCustomer.id}`, {
+        name: editCustomerForm.name.trim(),
+        phone: editCustomerForm.phone.trim() || null,
+        address: editCustomerForm.address.trim() || null,
+      });
+      if (!res.success) throw new Error(res.message || 'Unable to update customer.');
+
+      const updatedCustomer = {
+        ...editCustomer,
+        ...res.data,
+        total_due: editCustomer.total_due,
+      };
+      setCustomers((current) =>
+        current.map((customer) =>
+          String(customer.id) === String(editCustomer.id)
+            ? { ...customer, ...updatedCustomer }
+            : customer
+        )
+      );
+      if (selectedCustomer && String(selectedCustomer.id) === String(editCustomer.id)) {
+        setSelectedCustomer({ ...selectedCustomer, ...updatedCustomer });
+        if (customerHistory?.customer) {
+          setCustomerHistory({
+            ...customerHistory,
+            customer: { ...customerHistory.customer, ...res.data },
+          });
+        }
+      }
+      setEditCustomer(null);
+      setSuccessMessage('Customer updated successfully.');
+      await fetchCustomers();
+    } catch (err) {
+      setEditCustomerErrors({ form: err.message || 'Unable to update customer. Please try again.' });
+    } finally {
+      setEditCustomerSaving(false);
+    }
+  };
+
   // Handle Pay Specific Bill
   const handlePayBill = async (e) => {
     e.preventDefault();
@@ -378,6 +448,14 @@ export function Customers() {
       </div>
 
       {/* Outstanding Customers List */}
+      {successMessage && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+          {successMessage}
+          <button className="ml-3 text-emerald-700 underline" onClick={() => setSuccessMessage('')}>
+            Dismiss
+          </button>
+        </div>
+      )}
       <Card>
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg font-bold text-gray-900">Outstanding Customers</h2>
@@ -439,6 +517,14 @@ export function Customers() {
                       </td>
                       <td className="py-4 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-2">
+                        <Button
+                          onClick={(e) => { e.stopPropagation(); openEditCustomer(c); }}
+                          variant="outline"
+                          className="min-w-[4.75rem] text-xs px-2.5 py-1 flex items-center justify-center space-x-1 text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </Button>
                         <Button
                           onClick={(e) => { e.stopPropagation(); loadCustomerDetail(c); }}
                           variant="outline"
@@ -604,6 +690,64 @@ export function Customers() {
                 <Button type="submit">Add Customer</Button>
               </div>
             </form>}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Customer Modal */}
+      {editCustomer && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="modal-window bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="text-lg font-bold text-gray-900">Edit Customer</h3>
+              <button
+                onClick={() => !editCustomerSaving && setEditCustomer(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditCustomer} className="space-y-4">
+              {editCustomerErrors.form && (
+                <p className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">
+                  {editCustomerErrors.form}
+                </p>
+              )}
+              <div className="rounded-lg bg-gray-50 p-3 text-sm">
+                <span className="text-gray-500">Customer ID</span>
+                <p className="font-mono font-bold text-emerald-700">
+                  {editCustomer.customer_code || editCustomer.id}
+                </p>
+              </div>
+              <Input
+                label="Customer Name"
+                value={editCustomerForm.name}
+                error={editCustomerErrors.name}
+                onChange={(e) => setEditCustomerForm({ ...editCustomerForm, name: e.target.value })}
+                required
+              />
+              <Input
+                label="Phone Number"
+                value={editCustomerForm.phone}
+                error={editCustomerErrors.phone}
+                onChange={(e) => setEditCustomerForm({ ...editCustomerForm, phone: e.target.value })}
+              />
+              <Input
+                label="Address (Optional)"
+                value={editCustomerForm.address}
+                onChange={(e) => setEditCustomerForm({ ...editCustomerForm, address: e.target.value })}
+              />
+
+              <div className="flex justify-end space-x-3 pt-2">
+                <Button type="button" variant="secondary" onClick={() => setEditCustomer(null)} disabled={editCustomerSaving}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={editCustomerSaving}>
+                  {editCustomerSaving ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}

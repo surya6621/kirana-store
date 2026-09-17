@@ -2,6 +2,15 @@ import { Link } from 'react-router-dom';
 import { useCustomerCart } from '../context/CustomerCartContext';
 import { ShoppingBag, Plus, Check } from 'lucide-react';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const SERVER_URL = API_URL.replace(/\/api\/?$/, '');
+
+function resolveImageUrl(imageUrl) {
+  if (!imageUrl) return '';
+  if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
+  return `${SERVER_URL}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`;
+}
+
 export function ProductCard({ product }) {
   const { cart, addToCart } = useCustomerCart();
   const prodId = product.product_id || product.id;
@@ -12,12 +21,14 @@ export function ProductCard({ product }) {
   const isLow = stock > 0 && stock <= (product.minimum_stock || 5);
   const price = product.selling_price || product.price;
 
+  const resolvedImage = resolveImageUrl(product.image_url);
+
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group">
       <Link to={`/store/products/${prodId}`} className="block relative aspect-square bg-gray-50 flex items-center justify-center overflow-hidden">
-        {product.image_url ? (
+        {resolvedImage ? (
           <img
-            src={`${(import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api$/, '')}${product.image_url}`}
+            src={resolvedImage}
             alt={product.name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />

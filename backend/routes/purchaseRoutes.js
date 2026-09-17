@@ -3,6 +3,7 @@ const express = require("express");
 const {
     createPurchase,
     getPurchases,
+    getPurchaseById,
 } = require("../controllers/purchaseController");
 
 const {
@@ -17,6 +18,13 @@ router.get(
     authenticate,
     requireStaff,
     getPurchases
+);
+
+router.get(
+    "/:purchaseId",
+    authenticate,
+    requireStaff,
+    getPurchaseById
 );
 
 router.post(

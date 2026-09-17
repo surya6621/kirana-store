@@ -4,6 +4,8 @@ const {
     getProducts,
     getProductById,
     createProduct,
+    updateProduct,
+    setProductActive,
 } = require("../controllers/productController");
 
 const {
@@ -24,5 +26,9 @@ router.post(
     requireStaff,
     createProduct
 );
+
+router.patch("/:id/archive", authenticate, requireStaff, setProductActive);
+router.patch("/:id/restore", authenticate, requireStaff, setProductActive);
+router.patch("/:id", authenticate, requireStaff, updateProduct);
 
 module.exports = router;
