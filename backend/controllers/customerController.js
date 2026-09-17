@@ -54,6 +54,114 @@ const getCustomers = async (req, res) => {
     }
 };
 
+const updateCustomer = async (req, res) => {
+    const allowedFields = {
+        name: "name",
+        phone: "phone",
+        address: "address",
+    };
+    const updates = {};
+
+    try {
+        for (const [field, column] of Object.entries(allowedFields)) {
+            if (!Object.prototype.hasOwnProperty.call(req.body, field)) {
+                continue;
+            }
+
+            const value = req.body[field];
+
+            if (field === "name") {
+                if (typeof value !== "string" || !value.trim()) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Customer name is required",
+                    });
+                }
+                updates.name = value.trim().slice(0, 100);
+            } else if (field === "phone") {
+                if (value === "" || value === null || value === undefined) {
+                    updates.phone = null;
+                } else if (typeof value !== "string" || !value.trim()) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Phone number is required",
+                    });
+                } else {
+                    updates.phone = value.trim().slice(0, 20);
+                }
+            } else if (field === "address") {
+                updates.address =
+                    typeof value === "string" && value.trim()
+                        ? value.trim()
+                        : null;
+            }
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "No customer changes were provided",
+            });
+        }
+
+        if (updates.phone) {
+            const phoneCheck = await pool.query(
+                `SELECT id FROM customers WHERE phone = $1 AND id != $2`,
+                [updates.phone, req.params.customerId]
+            );
+            if (phoneCheck.rows.length > 0) {
+                return res.status(409).json({
+                    success: false,
+                    message: "Phone number already exists for another customer",
+                });
+            }
+        }
+
+        const values = Object.values(updates);
+        const setClause = Object.keys(updates)
+            .map(
+                (column, index) =>
+                    `${column} = $${index + 1}`
+            )
+            .join(", ");
+        const result = await pool.query(
+            `UPDATE customers
+             SET ${setClause}
+             WHERE id = $${values.length + 1}
+             RETURNING id, customer_code, name, phone, address, is_active, created_at`,
+            [...values, req.params.customerId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Customer not found",
+            });
+        }
+
+        res.json({
+            success: true,
+            message: "Customer updated successfully",
+            data: result.rows[0],
+        });
+    } catch (error) {
+        console.error("Update customer error:", error);
+
+        if (error.code === "23505") {
+            return res.status(409).json({
+                success: false,
+                message: "Phone number already exists",
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            message: "Unable to update customer. Please try again.",
+        });
+    }
+};
+
+
 const archiveCustomer = async (req, res) => {
     try {
         const result = await pool.query(
@@ -506,5 +614,6 @@ module.exports = {
     getCustomerCreditHistory,
     recordCustomerPayment,
     getAllCustomerPayments,
+    updateCustomer,
     archiveCustomer,
 };

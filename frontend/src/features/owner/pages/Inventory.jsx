@@ -1,133 +1,1440 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Check, ChevronRight, ImagePlus, PackagePlus, Plus, RefreshCw, Search, SlidersHorizontal, X } from 'lucide-react';
-import { api } from '../../../services/api';
-import { ProductImage } from '../../../components/ui/ProductImage';
-import { formatCurrency, formatDate, formatStockWithUnit, stockStatus } from '../../../utils/format';
+import { useEffect, useMemo, useState } from "react";
+import {
+  AlertCircle,
+  Archive,
+  ArchiveRestore,
+  Check,
+  ChevronRight,
+  Edit,
+  ImagePlus,
+  PackagePlus,
+  Plus,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  X,
+} from "lucide-react";
+import { api } from "../../../services/api";
+import { ProductImage } from "../../../components/ui/ProductImage";
+import {
+  formatCurrency,
+  formatDate,
+  formatStockWithUnit,
+  stockStatus,
+} from "../../../utils/format";
 
-const emptyForm = { name: '', description: '', category_id: '', purchase_price: '', selling_price: '', initial_stock: '', minimum_stock: '5', unit: 'Piece', image_url: '' };
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const emptyForm = {
+  name: "",
+  description: "",
+  category_id: "",
+  purchase_price: "",
+  selling_price: "",
+  minimum_stock: "5",
+  unit: "Piece",
+  image_url: "",
+  opening_stock_enabled: false,
+  opening_quantity: "",
+  opening_supplier_id: "",
+  opening_payment_status: "PAID",
+  opening_amount_paid: "",
+};
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
-function StatusBadge({ status }) { return <span className={`status-badge status-${status.tone}`}>{status.label}</span>; }
-function Field({ label, required, error, ...props }) { return <label className="block text-sm font-semibold text-slate-700">{label}{required && <span className="ml-1 text-red-500">*</span>}<input {...props} className={`mt-1.5 w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 ${error ? 'border-red-400' : 'border-slate-200'}`} />{error && <span className="mt-1 block text-xs font-medium text-red-600">{error}</span>}</label>; }
+function StatusBadge({ status }) {
+  return (
+    <span className={`status-badge status-${status.tone}`}>{status.label}</span>
+  );
+}
+function Field({ label, required, error, ...props }) {
+  return (
+    <label className="block text-sm font-semibold text-slate-700">
+      {label}
+      {required && <span className="ml-1 text-red-500">*</span>}
+      <input
+        {...props}
+        className={`mt-1.5 w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 ${error ? "border-red-400" : "border-slate-200"}`}
+      />
+      {error && (
+        <span className="mt-1 block text-xs font-medium text-red-600">
+          {error}
+        </span>
+      )}
+    </label>
+  );
+}
 
 export function Inventory() {
   const [items, setItems] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [suppliers, setSuppliers] = useState([]);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [lifecycleFilter, setLifecycleFilter] = useState("active");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [supplierQuery, setSupplierQuery] = useState("");
   const [formErrors, setFormErrors] = useState({});
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [categoryForm, setCategoryForm] = useState({ name: "", description: "" });
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [categoryErrors, setCategoryErrors] = useState({});
+  const [categorySaving, setCategorySaving] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+  const [editForm, setEditForm] = useState(emptyForm);
+  const [editFormErrors, setEditFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
-  const [imageError, setImageError] = useState('');
+  const [imageError, setImageError] = useState("");
   const [imageUploading, setImageUploading] = useState(false);
   const [selected, setSelected] = useState(null);
   const [history, setHistory] = useState([]);
   const [adjustment, setAdjustment] = useState(null);
-  const [adjustmentForm, setAdjustmentForm] = useState({ quantity: '', direction: 'ADD', reason: '' });
-  const [adjustmentError, setAdjustmentError] = useState('');
-  const [message, setMessage] = useState('');
+  const [adjustmentForm, setAdjustmentForm] = useState({
+    quantity: "",
+    direction: "ADD",
+    reason: "",
+  });
+  const [adjustmentError, setAdjustmentError] = useState("");
+  const [message, setMessage] = useState("");
+  const [archiveTarget, setArchiveTarget] = useState(null);
+  const [lifecycleSaving, setLifecycleSaving] = useState(false);
 
   const fetchData = async () => {
-    setLoading(true); setError('');
+    setLoading(true);
+    setError("");
     try {
-      const [inventoryResponse, categoryResponse] = await Promise.all([api.get('/inventory'), api.get('/categories')]);
-      if (!inventoryResponse.success) throw new Error('Unable to load inventory.');
+      const [inventoryResponse, categoryResponse, supplierResponse] = await Promise.all([
+        api.get(`/inventory?status=${lifecycleFilter}`),
+        api.get("/categories"),
+        api.get("/suppliers"),
+      ]);
+      if (!inventoryResponse.success)
+        throw new Error("Unable to load inventory.");
       setItems(inventoryResponse.data || []);
       setCategories(categoryResponse.data || []);
-    } catch (err) { setError('Unable to load inventory. Please try again.'); console.error(err); } finally { setLoading(false); }
+      setSuppliers(supplierResponse.data || []);
+    } catch (err) {
+      setError("Unable to load inventory. Please try again.");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+  }, [lifecycleFilter]);
 
-  const filteredItems = useMemo(() => items.filter((item) => {
-    const status = stockStatus(item.current_stock, item.minimum_stock);
-    const matchesQuery = `${item.name} ${item.category_name}`.toLowerCase().includes(query.toLowerCase());
-    return matchesQuery && (statusFilter === 'all' || status.tone === statusFilter);
-  }), [items, query, statusFilter]);
+  const filteredItems = useMemo(
+    () =>
+      items.filter((item) => {
+        const status = stockStatus(item.current_stock, item.minimum_stock);
+        const matchesQuery = `${item.name} ${item.category_name}`
+          .toLowerCase()
+          .includes(query.toLowerCase());
+        return (
+          matchesQuery &&
+          (statusFilter === "all" || status.tone === statusFilter)
+        );
+      }),
+    [items, query, statusFilter],
+  );
 
-  const openCreate = () => { setForm(emptyForm); setFormErrors({}); setImageError(''); setFormOpen(true); };
-  const updateForm = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const openCreate = () => {
+    setForm(emptyForm);
+    setSupplierQuery("");
+    setFormErrors({});
+    setEditTarget(null);
+    setImageError("");
+    setFormOpen(true);
+  };
+  const openEdit = async (item) => {
+    try {
+      setImageError("");
+      const response = await api.get(`/products/${item.product_id}`);
+      if (!response.success) throw new Error(response.message || "Failed to load product");
+      const product = response.data;
+      setEditTarget({
+        ...item,
+        product_id: product.id,
+        image_url: product.image_url || "",
+      });
+      setEditForm({
+        name: product.name,
+        description: product.description || "",
+        category_id: String(product.category_id),
+        selling_price: String(product.selling_price),
+        purchase_price: product.purchase_price != null ? String(product.purchase_price) : "",
+        minimum_stock: String(product.minimum_stock),
+        unit: product.unit,
+        image_url: product.image_url || "",
+      });
+      setEditFormErrors({});
+      setFormOpen(true);
+    } catch (err) {
+      setMessage(err.message || "Failed to load product for editing");
+    }
+  };
+  const closeProductForm = () => {
+    if (saving) return;
+    setFormOpen(false);
+    setEditTarget(null);
+    setImageError("");
+  };
+  const updateForm = (key, value) =>
+    setForm((current) => ({ ...current, [key]: value }));
+  const updateEditForm = (key, value) =>
+    setEditForm((current) => ({ ...current, [key]: value }));
+  const updateCategoryForm = (key, value) =>
+    setCategoryForm((current) => ({ ...current, [key]: value }));
+
+  const openCategoryManager = () => {
+    setCategoryForm({ name: "", description: "" });
+    setEditingCategory(null);
+    setCategoryErrors({});
+    setCategoryModalOpen(true);
+  };
+
+  const startEditCategory = (category) => {
+    setEditingCategory(category);
+    setCategoryForm({
+      name: category.name || "",
+      description: category.description || "",
+    });
+    setCategoryErrors({});
+  };
+
+  const resetCategoryForm = () => {
+    setEditingCategory(null);
+    setCategoryForm({ name: "", description: "" });
+    setCategoryErrors({});
+  };
+
+  const saveCategory = async (event) => {
+    event.preventDefault();
+    const next = {};
+    if (!categoryForm.name.trim()) next.name = "Category name is required.";
+    setCategoryErrors(next);
+    if (Object.keys(next).length) return;
+
+    setCategorySaving(true);
+    try {
+      const payload = {
+        name: categoryForm.name.trim(),
+        description: categoryForm.description.trim() || null,
+      };
+      const response = editingCategory
+        ? await api.patch(`/categories/${editingCategory.id}`, payload)
+        : await api.post("/categories", payload);
+      if (!response.success)
+        throw new Error(response.message || "Category could not be saved.");
+
+      setMessage(
+        editingCategory
+          ? "Category updated successfully."
+          : "Category created successfully.",
+      );
+      resetCategoryForm();
+      await fetchData();
+    } catch (err) {
+      setCategoryErrors({
+        form: err.message || "Category could not be saved.",
+      });
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const removeCategory = async (category) => {
+    const confirmed = window.confirm(
+      `${category.name} will be removed only if no active products use it.`,
+    );
+    if (!confirmed || categorySaving) return;
+
+    setCategorySaving(true);
+    setCategoryErrors({});
+    try {
+      const response = await api.delete(`/categories/${category.id}`);
+      if (!response.success)
+        throw new Error(response.message || "Category could not be removed.");
+      setMessage("Category removed successfully.");
+      if (editingCategory && String(editingCategory.id) === String(category.id)) {
+        resetCategoryForm();
+      }
+      await fetchData();
+    } catch (err) {
+      setCategoryErrors({
+        form: err.message || "Category could not be removed.",
+      });
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const validateImageFile = (file) =>
+    new Promise((resolve, reject) => {
+      const previewUrl = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => {
+        URL.revokeObjectURL(previewUrl);
+        resolve();
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(previewUrl);
+        reject(new Error("Please choose a valid image file."));
+      };
+      image.src = previewUrl;
+    });
 
   const uploadImage = async (file) => {
     if (!file) return;
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setImageError('Use a JPG, PNG, or WEBP image.'); return; }
-    if (file.size > 5 * 1024 * 1024) { setImageError('Image must be 5 MB or smaller.'); return; }
-    setImageUploading(true); setImageError('');
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setImageError("Use a JPG, PNG, or WEBP image.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setImageError("Image must be 5 MB or smaller.");
+      return;
+    }
+    setImageUploading(true);
+    setImageError("");
     try {
-      const body = new FormData(); body.append('image', file);
-      const response = await fetch(`${API_URL}/upload`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }, body });
+      await validateImageFile(file);
+      const body = new FormData();
+      body.append("image", file);
+      const response = await fetch(`${API_URL}/upload`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+        },
+        body,
+      });
       const result = await response.json();
-      if (!response.ok || !result.success) throw new Error(result.message || 'Image upload failed.');
-      updateForm('image_url', result.imageUrl);
-    } catch (err) { setImageError(err.message || 'Image upload failed.'); } finally { setImageUploading(false); }
+      if (!response.ok || !result.success)
+        throw new Error(result.message || "Image upload failed.");
+      if (editTarget) {
+        updateEditForm("image_url", result.imageUrl);
+      } else {
+        updateForm("image_url", result.imageUrl);
+      }
+    } catch (err) {
+      setImageError(err.message || "Image upload failed.");
+    } finally {
+      setImageUploading(false);
+    }
   };
 
   const validate = () => {
     const next = {};
-    if (!form.name.trim()) next.name = 'Product name is required.';
-    if (!form.category_id) next.category_id = 'Choose a category.';
-    if (!form.unit.trim()) next.unit = 'Unit is required.';
-    if (form.selling_price === '' || Number(form.selling_price) < 0) next.selling_price = 'Enter a valid selling price.';
-    if (form.purchase_price !== '' && Number(form.purchase_price) < 0) next.purchase_price = 'Price cannot be negative.';
-    if (form.initial_stock === '' || Number(form.initial_stock) < 0) next.initial_stock = 'Stock cannot be negative.';
-    if (form.minimum_stock === '' || Number(form.minimum_stock) < 0) next.minimum_stock = 'Minimum stock cannot be negative.';
-    setFormErrors(next); return Object.keys(next).length === 0;
+    if (!form.name.trim()) next.name = "Product name is required.";
+    if (!form.category_id) next.category_id = "Choose a category.";
+    if (!form.unit.trim()) next.unit = "Unit is required.";
+    if (form.selling_price === "" || !Number.isFinite(Number(form.selling_price)) || Number(form.selling_price) <= 0)
+      next.selling_price = "Enter a valid selling price.";
+    if (form.purchase_price !== "" && (!Number.isFinite(Number(form.purchase_price)) || Number(form.purchase_price) < 0))
+      next.purchase_price = "Price cannot be negative.";
+    if (form.minimum_stock === "" || Number(form.minimum_stock) < 0)
+      next.minimum_stock = "Minimum stock cannot be negative.";
+    if (form.opening_stock_enabled) {
+      const quantity = Number(form.opening_quantity);
+      const purchasePrice = Number(form.purchase_price);
+      const total = quantity * purchasePrice;
+      const paid = form.opening_payment_status === "PAID"
+        ? total
+        : form.opening_payment_status === "PENDING"
+          ? 0
+          : Number(form.opening_amount_paid);
+      if (!Number.isFinite(quantity) || quantity <= 0) next.opening_quantity = "Quantity must be greater than 0.";
+      if (!form.opening_supplier_id) next.opening_supplier_id = "Select a supplier.";
+      if (form.purchase_price === "" || !Number.isFinite(purchasePrice) || purchasePrice < 0) next.purchase_price = "Enter a valid purchase price.";
+      if (!Number.isFinite(paid) || paid < 0 || paid > total) next.opening_amount_paid = "Paid amount must be between ₹0 and the total.";
+      if (form.opening_payment_status === "PARTIAL" && (paid <= 0 || paid >= total)) next.opening_amount_paid = "Partial payment must be between ₹0 and the total.";
+    }
+    setFormErrors(next);
+    return Object.keys(next).length === 0;
   };
 
   const createProduct = async (event) => {
-    event.preventDefault(); if (!validate()) return;
-    setSaving(true); setMessage('');
+    event.preventDefault();
+    if (!validate()) return;
+    setSaving(true);
+    setMessage("");
     try {
-      const response = await api.post('/products', { ...form, category_id: Number(form.category_id), selling_price: Number(form.selling_price), purchase_price: form.purchase_price === '' ? null : Number(form.purchase_price), initial_stock: Number(form.initial_stock), minimum_stock: Number(form.minimum_stock) });
-      if (!response.success) throw new Error(response.message || 'Product could not be created.');
-      setFormOpen(false); setMessage(`${form.name} added to inventory.`); await fetchData();
-    } catch (err) { setFormErrors({ form: err.message || 'Product could not be created.' }); } finally { setSaving(false); }
+      const response = await api.post("/products", {
+        ...form,
+        category_id: Number(form.category_id),
+        selling_price: Number(form.selling_price),
+        purchase_price:
+          form.purchase_price === "" ? null : Number(form.purchase_price),
+        minimum_stock: Number(form.minimum_stock),
+        opening_stock: form.opening_stock_enabled
+          ? {
+              enabled: true,
+              quantity: Number(form.opening_quantity),
+              supplier_id: Number(form.opening_supplier_id),
+              purchase_price: Number(form.purchase_price),
+              payment_status: form.opening_payment_status,
+              amount_paid: form.opening_payment_status === "PAID"
+                ? undefined
+                : form.opening_payment_status === "PENDING"
+                  ? 0
+                  : Number(form.opening_amount_paid),
+            }
+          : { enabled: false },
+      });
+      if (!response.success)
+        throw new Error(response.message || "Product could not be created.");
+      setFormOpen(false);
+      setMessage(response.message || "Product created successfully.");
+      await fetchData();
+    } catch (err) {
+      setFormErrors({ form: err.message || "Product could not be created." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const validateEdit = () => {
+    const next = {};
+    if (!editForm.name.trim()) next.name = "Product name is required.";
+    if (!editForm.category_id) next.category_id = "Choose a category.";
+    if (!editForm.unit.trim()) next.unit = "Unit is required.";
+    if (editForm.selling_price === "" || Number(editForm.selling_price) <= 0)
+      next.selling_price = "Selling price must be greater than 0.";
+    if (editForm.purchase_price !== "" && Number(editForm.purchase_price) < 0)
+      next.purchase_price = "Purchase price cannot be negative.";
+    if (editForm.minimum_stock === "" || Number(editForm.minimum_stock) < 0)
+      next.minimum_stock = "Minimum stock must be 0 or greater.";
+    setEditFormErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
+  const updateProduct = async (event) => {
+    event.preventDefault();
+    if (!validateEdit()) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await api.patch(`/products/${editTarget.product_id}`, {
+        name: editForm.name.trim(),
+        category_id: Number(editForm.category_id),
+        description: editForm.description.trim() || null,
+        unit: editForm.unit.trim(),
+        selling_price: Number(editForm.selling_price),
+        purchase_price:
+          editForm.purchase_price === "" ? null : Number(editForm.purchase_price),
+        minimum_stock: Number(editForm.minimum_stock),
+        image_url: editForm.image_url || null,
+      });
+      if (!response.success)
+        throw new Error(response.message || "Product could not be updated.");
+      setFormOpen(false);
+      setEditTarget(null);
+      setMessage(`${editForm.name} updated successfully.`);
+      await fetchData();
+    } catch (err) {
+      setEditFormErrors({ form: err.message || "Product could not be updated." });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const openDetails = async (item) => {
-    setSelected(item); setHistory([]);
-    try { const response = await api.get(`/inventory/${item.product_id}/history`); if (response.success) setHistory(response.data || []); } catch (err) { console.error(err); }
+    setSelected(item);
+    setHistory([]);
+    try {
+      const response = await api.get(`/inventory/${item.product_id}/history`);
+      if (response.success) setHistory(response.data || []);
+    } catch (err) {
+      console.error(err);
+    }
   };
   const applyAdjustment = async (event) => {
     event.preventDefault();
     const quantity = Number(adjustmentForm.quantity);
-    if (!adjustment || !adjustmentForm.quantity || !adjustmentForm.reason.trim()) return;
-    if (!Number.isFinite(quantity) || quantity < 0) { setAdjustmentError('Enter a positive quantity.'); return; }
-    if (quantity === 0) { setAdjustmentError('Quantity must be greater than 0.'); return; }
-    if (adjustmentForm.direction === 'REMOVE' && quantity > Number(adjustment.current_stock)) {
-      setAdjustmentError(`Cannot remove ${formatStockWithUnit(quantity, adjustment.unit)}. Only ${formatStockWithUnit(adjustment.current_stock, adjustment.unit)} is available.`);
+    if (
+      !adjustment ||
+      !adjustmentForm.quantity ||
+      !adjustmentForm.reason.trim()
+    )
+      return;
+    if (!Number.isFinite(quantity) || quantity < 0) {
+      setAdjustmentError("Enter a positive quantity.");
+      return;
+    }
+    if (quantity === 0) {
+      setAdjustmentError("Quantity must be greater than 0.");
+      return;
+    }
+    if (
+      adjustmentForm.direction === "REMOVE" &&
+      quantity > Number(adjustment.current_stock)
+    ) {
+      setAdjustmentError(
+        `Cannot remove ${formatStockWithUnit(quantity, adjustment.unit)}. Only ${formatStockWithUnit(adjustment.current_stock, adjustment.unit)} is available.`,
+      );
       return;
     }
     setSaving(true);
-    setAdjustmentError('');
+    setAdjustmentError("");
     try {
-      const change = adjustmentForm.direction === 'REMOVE' ? -quantity : quantity;
-      const actionLabel = adjustmentForm.direction === 'REMOVE' ? 'REMOVE STOCK' : 'ADD STOCK';
-      const response = await api.patch(`/inventory/${adjustment.product_id}`, { transaction_type: 'ADJUSTMENT', quantity: change, reason: `${actionLabel}: ${adjustmentForm.reason.trim()}` });
-      if (!response.success) throw new Error(response.message || 'Stock adjustment failed.');
-      setAdjustment(null); setAdjustmentForm({ quantity: '', direction: 'ADD', reason: '' }); setMessage('Stock adjusted successfully.'); await fetchData();
-    } catch (err) { setAdjustmentError(err.message || 'Stock adjustment failed.'); } finally { setSaving(false); }
+      const change =
+        adjustmentForm.direction === "REMOVE" ? -quantity : quantity;
+      const actionLabel =
+        adjustmentForm.direction === "REMOVE" ? "REMOVE STOCK" : "ADD STOCK";
+      const response = await api.patch(`/inventory/${adjustment.product_id}`, {
+        transaction_type: "ADJUSTMENT",
+        quantity: change,
+        reason: `${actionLabel}: ${adjustmentForm.reason.trim()}`,
+      });
+      if (!response.success)
+        throw new Error(response.message || "Stock adjustment failed.");
+      setAdjustment(null);
+      setAdjustmentForm({ quantity: "", direction: "ADD", reason: "" });
+      setMessage("Stock adjusted successfully.");
+      await fetchData();
+    } catch (err) {
+      setAdjustmentError(err.message || "Stock adjustment failed.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateProductLifecycle = async () => {
+    if (!archiveTarget) return;
+    setLifecycleSaving(true);
+    try {
+      const action = archiveTarget.is_active ? "archive" : "restore";
+      const response = await api.patch(
+        `/products/${archiveTarget.product_id}/${action}`,
+        {},
+      );
+      if (!response.success)
+        throw new Error(response.message || "Unable to update product.");
+      setArchiveTarget(null);
+      setMessage(
+        archiveTarget.is_active
+          ? `${archiveTarget.name} archived successfully.`
+          : `${archiveTarget.name} restored successfully.`,
+      );
+      await fetchData();
+    } catch {
+      setError("Unable to archive product. Please try again.");
+    } finally {
+      setLifecycleSaving(false);
+    }
   };
 
   const adjustmentQuantity = Number(adjustmentForm.quantity);
-  const adjustmentIsRemoval = adjustmentForm.direction === 'REMOVE';
-  const adjustmentAfterStock = adjustment && Number.isFinite(adjustmentQuantity) && adjustmentQuantity > 0
-    ? Number(adjustment.current_stock) + (adjustmentIsRemoval ? -adjustmentQuantity : adjustmentQuantity)
-    : null;
+  const adjustmentIsRemoval = adjustmentForm.direction === "REMOVE";
+  const adjustmentAfterStock =
+    adjustment && Number.isFinite(adjustmentQuantity) && adjustmentQuantity > 0
+      ? Number(adjustment.current_stock) +
+        (adjustmentIsRemoval ? -adjustmentQuantity : adjustmentQuantity)
+      : null;
 
-  return <div className="space-y-6">
-    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="mb-1 text-sm font-semibold text-emerald-700">Catalog & stock control</p><h2 className="page-title text-3xl font-extrabold">Inventory</h2><p className="mt-2 text-sm text-[var(--muted)]">Keep every shelf, price, and reorder point in view.</p></div><div className="flex gap-2"><button onClick={fetchData} className="focus-ring rounded-xl border border-slate-200 bg-white p-3 text-slate-600 hover:bg-slate-50" aria-label="Refresh inventory"><RefreshCw className="h-4 w-4" /></button><button onClick={openCreate} className="focus-ring flex items-center gap-2 rounded-xl bg-[var(--brand-700)] px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-[var(--brand-900)]"><Plus className="h-4 w-4" /> Add product</button></div></div>
-    {message && <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800"><Check className="h-4 w-4" />{message}<button className="ml-auto" onClick={() => setMessage('')} aria-label="Dismiss message"><X className="h-4 w-4" /></button></div>}
-    {error && <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"><AlertCircle className="h-4 w-4" />{error}<button className="ml-auto underline" onClick={fetchData}>Retry</button></div>}
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Metric label="Products" value={items.length} /><Metric label="In stock" value={items.filter((item) => stockStatus(item.current_stock, item.minimum_stock).tone === 'success').length} tone="green" /><Metric label="Low stock" value={items.filter((item) => stockStatus(item.current_stock, item.minimum_stock).tone === 'warning').length} tone="amber" /><Metric label="Out of stock" value={items.filter((item) => stockStatus(item.current_stock, item.minimum_stock).tone === 'danger').length} tone="red" /></div>
-    <section className="surface overflow-hidden rounded-2xl"><div className="flex flex-col gap-3 border-b border-[var(--line)] p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 sm:max-w-sm"><Search className="h-4 w-4 text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search products or categories" className="w-full bg-transparent text-sm outline-none" /></div><div className="flex items-center gap-2"><SlidersHorizontal className="h-4 w-4 text-slate-400" /><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600"><option value="all">All stock statuses</option><option value="success">In stock</option><option value="warning">Low stock</option><option value="danger">Out of stock</option></select></div></div>{loading ? <div className="space-y-3 p-5">{[1, 2, 3, 4].map((row) => <div key={row} className="h-16 animate-pulse rounded-xl bg-slate-100" />)}</div> : filteredItems.length === 0 ? <div className="p-14 text-center"><PackagePlus className="mx-auto h-10 w-10 text-emerald-600" /><h3 className="mt-3 text-lg font-bold">{items.length ? 'No matching products' : 'No products yet'}</h3><p className="mt-1 text-sm text-[var(--muted)]">{items.length ? 'Try another search or filter.' : 'Add your first product to start managing inventory.'}</p>{!items.length && <button onClick={openCreate} className="mt-5 rounded-xl bg-[var(--brand-700)] px-4 py-2.5 text-sm font-bold text-white">Add your first product</button>}</div> : <div className="table-shell"><table className="data-table"><thead><tr><th>Product</th><th>Category</th><th>Prices</th><th>Current stock</th><th>Status</th><th>Updated</th><th aria-label="Actions" /></tr></thead><tbody>{filteredItems.map((item) => { const status = stockStatus(item.current_stock, item.minimum_stock); return <tr key={item.product_id}><td><button onClick={() => openDetails(item)} className="flex items-center gap-3 text-left"><ProductImage src={item.image_url} alt={item.name} size="sm" /><span><span className="block font-bold text-slate-800">{item.name}</span><span className="block text-xs text-slate-500">{item.unit}</span></span></button></td><td className="text-slate-600">{item.category_name || 'Uncategorized'}</td><td><span className="block font-bold text-slate-800">{formatCurrency(item.selling_price)}</span><span className="text-xs text-slate-500">Buy {formatCurrency(item.purchase_price)}</span></td><td><span className="font-bold">{item.current_stock}</span> <span className="text-xs text-slate-500">/ min {item.minimum_stock}</span></td><td><StatusBadge status={status} /></td><td className="text-slate-500">{formatDate(item.updated_at)}</td><td><div className="flex justify-end gap-1"><button onClick={() => setAdjustment(item)} className="rounded-lg p-2 text-emerald-700 hover:bg-emerald-50" title="Adjust stock"><PackagePlus className="h-4 w-4" /></button><button onClick={() => openDetails(item)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" title="View details"><ChevronRight className="h-4 w-4" /></button></div></td></tr>; })}</tbody></table></div>}</section>
-    {formOpen && <Modal title="Add product" onClose={() => !saving && setFormOpen(false)}><form onSubmit={createProduct} className="space-y-5">{formErrors.form && <p className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{formErrors.form}</p>}<div className="grid gap-4 sm:grid-cols-2"><Field label="Product name" required value={form.name} error={formErrors.name} onChange={(e) => updateForm('name', e.target.value)} placeholder="e.g. Duracell AA Batteries" /><label className="block text-sm font-semibold text-slate-700">Category<span className="ml-1 text-red-500">*</span><select value={form.category_id} onChange={(e) => updateForm('category_id', e.target.value)} className={`mt-1.5 w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 ${formErrors.category_id ? 'border-red-400' : 'border-slate-200'}`}><option value="">Select category</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>{formErrors.category_id && <span className="mt-1 block text-xs text-red-600">{formErrors.category_id}</span>}</label></div><div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/50 p-4"><div className="flex items-center gap-4"><ProductImage src={form.image_url} alt="Product preview" size="lg" /><div><p className="font-bold">Product image</p><p className="mt-1 text-xs text-slate-500">JPG, PNG, or WEBP up to 5 MB</p><label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-bold text-emerald-700 shadow-sm"><ImagePlus className="h-4 w-4" />{imageUploading ? 'Uploading...' : form.image_url ? 'Replace image' : 'Upload image'}<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={imageUploading} onChange={(e) => uploadImage(e.target.files?.[0])} /></label>{form.image_url && <button type="button" onClick={() => updateForm('image_url', '')} className="ml-2 text-xs font-semibold text-red-600">Remove</button>}</div></div>{imageError && <p className="mt-2 text-xs font-semibold text-red-600">{imageError}</p>}</div><div className="grid gap-4 sm:grid-cols-2"><Field label="Purchase price (₹)" type="number" min="0" step="0.01" value={form.purchase_price} error={formErrors.purchase_price} onChange={(e) => updateForm('purchase_price', e.target.value)} placeholder="0.00" /><Field label="Selling price (₹)" required type="number" min="0" step="0.01" value={form.selling_price} error={formErrors.selling_price} onChange={(e) => updateForm('selling_price', e.target.value)} placeholder="0.00" /><Field label="Initial stock" required type="number" min="0" step="0.001" value={form.initial_stock} error={formErrors.initial_stock} onChange={(e) => updateForm('initial_stock', e.target.value)} placeholder="50" /><Field label="Minimum stock" required type="number" min="0" step="0.001" value={form.minimum_stock} error={formErrors.minimum_stock} onChange={(e) => updateForm('minimum_stock', e.target.value)} placeholder="5" /></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Unit" required value={form.unit} error={formErrors.unit} onChange={(e) => updateForm('unit', e.target.value)} placeholder="Piece, pack, kg" /><Field label="Description" value={form.description} onChange={(e) => updateForm('description', e.target.value)} placeholder="Optional product notes" /></div><div className="flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" onClick={() => setFormOpen(false)} className="rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100">Cancel</button><button disabled={saving || imageUploading} className="rounded-xl bg-[var(--brand-700)] px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50">{saving ? 'Saving...' : 'Save product'}</button></div></form></Modal>}
-    {adjustment && <Modal title={`Adjust stock: ${adjustment.name}`} onClose={() => !saving && setAdjustment(null)}><form onSubmit={applyAdjustment} className="space-y-5">{adjustmentError && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{adjustmentError}</p>}<div className={`rounded-xl p-4 ${adjustmentIsRemoval ? 'bg-amber-50' : 'bg-emerald-50'}`}><p className={`text-sm ${adjustmentIsRemoval ? 'text-amber-800' : 'text-emerald-800'}`}>Current stock</p><p className={`mt-1 text-2xl font-extrabold ${adjustmentIsRemoval ? 'text-amber-950' : 'text-emerald-950'}`}>{formatStockWithUnit(adjustment.current_stock, adjustment.unit)}</p></div><div className="grid gap-4 sm:grid-cols-2"><label className="block text-sm font-semibold text-slate-700">Transaction type<select value={adjustmentForm.direction} onChange={(e) => setAdjustmentForm({ ...adjustmentForm, direction: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm"><option value="ADD">Add Stock</option><option value="REMOVE">Remove Stock</option></select></label><Field label={adjustmentIsRemoval ? 'Quantity to remove' : 'Quantity to add'} required type="number" min="0" step="0.001" value={adjustmentForm.quantity} onChange={(e) => { setAdjustmentError(''); setAdjustmentForm({ ...adjustmentForm, quantity: e.target.value }); }} placeholder="Enter quantity" /></div><Field label="Reason" required value={adjustmentForm.reason} onChange={(e) => setAdjustmentForm({ ...adjustmentForm, reason: e.target.value })} placeholder="e.g. Physical stock count" />{adjustmentAfterStock !== null && <div className={`rounded-xl border p-4 text-sm ${adjustmentIsRemoval ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}><p>Stock will {adjustmentIsRemoval ? 'decrease' : 'increase'} from <strong>{formatStockWithUnit(adjustment.current_stock, adjustment.unit)}</strong> to <strong>{formatStockWithUnit(adjustmentAfterStock, adjustment.unit)}</strong>.</p><p className="mt-1 font-bold">Adjustment: {adjustmentIsRemoval ? '-' : '+'}{formatStockWithUnit(adjustmentQuantity, adjustment.unit)}</p></div>}<div className="flex flex-col-reverse justify-end gap-2 border-t border-slate-100 pt-4 sm:flex-row"><button type="button" onClick={() => setAdjustment(null)} className="rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100">Cancel</button><button disabled={saving} className={`rounded-xl px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50 ${adjustmentIsRemoval ? 'bg-amber-600 hover:bg-amber-700' : 'bg-[var(--brand-700)] hover:bg-[var(--brand-900)]'}`}>{saving ? 'Saving...' : adjustmentIsRemoval ? 'Remove Stock' : 'Add Stock'}</button></div></form></Modal>}
-    {selected && <Modal title={selected.name} onClose={() => setSelected(null)}><div className="space-y-6"><div className="flex items-center gap-4"><ProductImage src={selected.image_url} alt={selected.name} size="lg" /><div><p className="text-sm text-slate-500">{selected.category_name || 'Uncategorized'} · {selected.unit}</p><p className="mt-1 text-2xl font-extrabold">{formatCurrency(selected.selling_price)}</p><StatusBadge status={stockStatus(selected.current_stock, selected.minimum_stock)} /></div></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[['Current stock', selected.current_stock], ['Minimum stock', selected.minimum_stock], ['Purchase price', formatCurrency(selected.purchase_price)], ['Last updated', formatDate(selected.updated_at)]].map(([label, value]) => <div key={label} className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-bold">{value}</p></div>)}</div><div><h3 className="mb-3 font-bold">Stock history</h3>{history.length ? <div className="space-y-2">{history.map((entry) => <div key={entry.id} className="flex items-center justify-between rounded-xl border border-slate-100 p-3 text-sm"><div><p className="font-bold">{entry.transaction_type}</p><p className="text-xs text-slate-500">{entry.reason || 'No reason'} · {formatDate(entry.created_at)}</p></div><span className={`font-extrabold ${Number(entry.quantity_change) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{Number(entry.quantity_change) >= 0 ? '+' : ''}{entry.quantity_change}</span></div>)}</div> : <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No stock movements recorded yet.</p>}</div></div></Modal>}
-  </div>;
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="mb-1 text-sm font-semibold text-emerald-700">
+            Catalog & stock control
+          </p>
+          <h2 className="page-title text-3xl font-extrabold">Inventory</h2>
+          <p className="mt-2 text-sm text-[var(--muted)]">
+            Keep every shelf, price, and reorder point in view.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={fetchData}
+            className="focus-ring rounded-xl border border-slate-200 bg-white p-3 text-slate-600 hover:bg-slate-50"
+            aria-label="Refresh inventory"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+          <button
+            onClick={openCreate}
+            className="focus-ring flex items-center gap-2 rounded-xl bg-[var(--brand-700)] px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-[var(--brand-900)]"
+          >
+            <Plus className="h-4 w-4" /> Add product
+          </button>
+          <button
+            onClick={openCategoryManager}
+            className="focus-ring flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
+          >
+            <Edit className="h-4 w-4" /> Categories
+          </button>
+        </div>
+      </div>
+      {message && (
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+          <Check className="h-4 w-4" />
+          {message}
+          <button
+            className="ml-auto"
+            onClick={() => setMessage("")}
+            aria-label="Dismiss message"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+      {error && (
+        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          <AlertCircle className="h-4 w-4" />
+          {error}
+          <button className="ml-auto underline" onClick={fetchData}>
+            Retry
+          </button>
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Metric label="Products" value={items.length} />
+        <Metric
+          label="In stock"
+          value={
+            items.filter(
+              (item) =>
+                stockStatus(item.current_stock, item.minimum_stock).tone ===
+                "success",
+            ).length
+          }
+          tone="green"
+        />
+        <Metric
+          label="Low stock"
+          value={
+            items.filter(
+              (item) =>
+                stockStatus(item.current_stock, item.minimum_stock).tone ===
+                "warning",
+            ).length
+          }
+          tone="amber"
+        />
+        <Metric
+          label="Out of stock"
+          value={
+            items.filter(
+              (item) =>
+                stockStatus(item.current_stock, item.minimum_stock).tone ===
+                "danger",
+            ).length
+          }
+          tone="red"
+        />
+      </div>
+      <section className="surface overflow-hidden rounded-2xl">
+        <div className="flex flex-col gap-3 border-b border-[var(--line)] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 sm:max-w-sm">
+            <Search className="h-4 w-4 text-slate-400" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search products or categories"
+              className="w-full bg-transparent text-sm outline-none"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <SlidersHorizontal className="h-4 w-4 text-slate-400" />
+            <select
+              value={lifecycleFilter}
+              onChange={(event) => setLifecycleFilter(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600"
+            >
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
+              <option value="all">All products</option>
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600"
+            >
+              <option value="all">All stock statuses</option>
+              <option value="success">In stock</option>
+              <option value="warning">Low stock</option>
+              <option value="danger">Out of stock</option>
+            </select>
+          </div>
+        </div>
+        {loading ? (
+          <div className="space-y-3 p-5">
+            {[1, 2, 3, 4].map((row) => (
+              <div
+                key={row}
+                className="h-16 animate-pulse rounded-xl bg-slate-100"
+              />
+            ))}
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="p-14 text-center">
+            <PackagePlus className="mx-auto h-10 w-10 text-emerald-600" />
+            <h3 className="mt-3 text-lg font-bold">
+              {items.length ? "No matching products" : "No products yet"}
+            </h3>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              {items.length
+                ? "Try another search or filter."
+                : "Add your first product to start managing inventory."}
+            </p>
+            {!items.length && (
+              <button
+                onClick={openCreate}
+                className="mt-5 rounded-xl bg-[var(--brand-700)] px-4 py-2.5 text-sm font-bold text-white"
+              >
+                Add your first product
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="table-shell">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Category</th>
+                  <th>Prices</th>
+                  <th>Current stock</th>
+                  <th>Status</th>
+                  <th>Updated</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {filteredItems.map((item) => {
+                  const status = stockStatus(
+                    item.current_stock,
+                    item.minimum_stock,
+                  );
+                  return (
+                    <tr key={item.product_id}>
+                      <td>
+                        <button
+                          onClick={() => openDetails(item)}
+                          className="flex items-center gap-3 text-left"
+                        >
+                          <ProductImage
+                            src={item.image_url}
+                            alt={item.name}
+                            size="sm"
+                          />
+                          <span>
+                            <span className="block font-bold text-slate-800">
+                              {item.name}
+                            </span>
+                            <span className="block text-xs text-slate-500">
+                              {item.unit}
+                            </span>
+                          </span>
+                        </button>
+                      </td>
+                      <td className="text-slate-600">
+                        {item.category_name || "Uncategorized"}
+                      </td>
+                      <td>
+                        <span className="block font-bold text-slate-800">
+                          {formatCurrency(item.selling_price)}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          Buy {formatCurrency(item.purchase_price)}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="font-bold">
+                          {formatStockWithUnit(item.current_stock, item.unit)}
+                        </span>{" "}
+                        <span className="text-xs text-slate-500">
+                          / min {item.minimum_stock}
+                        </span>
+                      </td>
+                      <td>
+                        <StatusBadge status={status} />
+                      </td>
+                      <td className="text-slate-500">
+                        {formatDate(item.updated_at)}
+                      </td>
+                      <td>
+                        <div className="flex justify-end gap-1">
+                          <button
+                            onClick={() => openEdit(item)}
+                            className="rounded-lg p-2 text-emerald-700 hover:bg-emerald-50"
+                            title="Edit product"
+                            aria-label={`Edit ${item.name}`}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => setAdjustment(item)}
+                            className="rounded-lg p-2 text-emerald-700 hover:bg-emerald-50"
+                            title="Adjust stock"
+                          >
+                            <PackagePlus className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => openDetails(item)}
+                            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                            title="View details"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => setArchiveTarget(item)}
+                            className={`rounded-lg p-2 hover:bg-slate-100 ${item.is_active ? "text-red-600" : "text-emerald-700"}`}
+                            title={item.is_active ? "Archive product" : "Restore product"}
+                            aria-label={item.is_active ? `Archive ${item.name}` : `Restore ${item.name}`}
+                          >
+                            {item.is_active ? (
+                              <Archive className="h-4 w-4" />
+                            ) : (
+                              <ArchiveRestore className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      {formOpen && (
+        <Modal
+          title={editTarget ? "Edit product" : "Add product"}
+          onClose={closeProductForm}
+        >
+          <form onSubmit={editTarget ? updateProduct : createProduct} className="space-y-5">
+            {(editTarget ? editFormErrors : formErrors).form && (
+              <p className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">
+                {(editTarget ? editFormErrors : formErrors).form}
+              </p>
+            )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Product name"
+                required
+                value={editTarget ? editForm.name : form.name}
+                error={editTarget ? editFormErrors.name : formErrors.name}
+                onChange={(e) => (editTarget ? updateEditForm : updateForm)("name", e.target.value)}
+                placeholder="e.g. Duracell AA Batteries"
+              />
+              <label className="block text-sm font-semibold text-slate-700">
+                Category<span className="ml-1 text-red-500">*</span>
+                <select
+                  value={editTarget ? editForm.category_id : form.category_id}
+                  onChange={(e) => (editTarget ? updateEditForm : updateForm)("category_id", e.target.value)}
+                  className={`mt-1.5 w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 ${(editTarget ? editFormErrors.category_id : formErrors.category_id) ? "border-red-400" : "border-slate-200"}`}
+                >
+                  <option value="">Select category</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+                {(editTarget ? editFormErrors.category_id : formErrors.category_id) && (
+                  <span className="mt-1 block text-xs text-red-600">
+                    {(editTarget ? editFormErrors.category_id : formErrors.category_id)}
+                  </span>
+                )}
+              </label>
+            </div>
+            <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/50 p-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                {editTarget && (
+                  <div>
+                    <p className="mb-2 text-xs font-bold uppercase text-slate-500">
+                      Current Photo
+                    </p>
+                    <ProductImage
+                      src={editTarget.image_url}
+                      alt="Current product"
+                      size="lg"
+                    />
+                  </div>
+                )}
+                <div>
+                  <p className="mb-2 text-xs font-bold uppercase text-slate-500">
+                    {editTarget ? "New Photo" : "Product Photo"}
+                  </p>
+                  <ProductImage
+                    src={editTarget ? editForm.image_url : form.image_url}
+                    alt="Product preview"
+                    size="lg"
+                  />
+                </div>
+                <div>
+                  <p className="font-bold">Product image</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    JPG, PNG, or WEBP up to 5 MB
+                  </p>
+                  <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-bold text-emerald-700 shadow-sm">
+                    <ImagePlus className="h-4 w-4" />
+                    {imageUploading
+                      ? "Uploading..."
+                      : (editTarget ? editForm.image_url : form.image_url)
+                        ? "Replace image"
+                        : "Upload image"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      disabled={imageUploading}
+                      onChange={(e) => uploadImage(e.target.files?.[0])}
+                    />
+                  </label>
+                  {(editTarget ? editForm.image_url : form.image_url) && (
+                    <button
+                      type="button"
+                      onClick={() => (editTarget ? updateEditForm : updateForm)("image_url", "")}
+                      className="ml-2 text-xs font-semibold text-red-600"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+              {imageError && (
+                <p className="mt-2 text-xs font-semibold text-red-600">
+                  {imageError}
+                </p>
+              )}
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Purchase price (₹)"
+                type="number"
+                min="0"
+                step="0.01"
+                value={editTarget ? editForm.purchase_price : form.purchase_price}
+                error={editTarget ? editFormErrors.purchase_price : formErrors.purchase_price}
+                onChange={(e) => (editTarget ? updateEditForm : updateForm)("purchase_price", e.target.value)}
+                placeholder="0.00"
+              />
+              <Field
+                label="Selling price (₹)"
+                required
+                type="number"
+                min="0"
+                step="0.01"
+                value={editTarget ? editForm.selling_price : form.selling_price}
+                error={editTarget ? editFormErrors.selling_price : formErrors.selling_price}
+                onChange={(e) => (editTarget ? updateEditForm : updateForm)("selling_price", e.target.value)}
+                placeholder="0.00"
+              />
+              <Field
+                label="Minimum stock"
+                required
+                type="number"
+                min="0"
+                step="0.001"
+                value={editTarget ? editForm.minimum_stock : form.minimum_stock}
+                error={editTarget ? editFormErrors.minimum_stock : formErrors.minimum_stock}
+                onChange={(e) => (editTarget ? updateEditForm : updateForm)("minimum_stock", e.target.value)}
+                placeholder="5"
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Unit"
+                required
+                value={editTarget ? editForm.unit : form.unit}
+                error={editTarget ? editFormErrors.unit : formErrors.unit}
+                onChange={(e) => (editTarget ? updateEditForm : updateForm)("unit", e.target.value)}
+                placeholder="Piece, pack, kg"
+              />
+              <Field
+                label="Description"
+                value={editTarget ? editForm.description : form.description}
+                onChange={(e) => (editTarget ? updateEditForm : updateForm)("description", e.target.value)}
+                placeholder="Optional product notes"
+              />
+            </div>
+            {!editTarget && (
+              <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+                <label className="flex items-start gap-3 text-sm font-bold text-slate-800">
+                  <input
+                    type="checkbox"
+                    checked={form.opening_stock_enabled}
+                    onChange={(event) => updateForm("opening_stock_enabled", event.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-emerald-700"
+                  />
+                  <span>
+                    <span className="block">Opening stock</span>
+                    <span className="mt-1 block text-xs font-medium text-slate-600">I am adding stock purchased from a supplier</span>
+                  </span>
+                </label>
+                {form.opening_stock_enabled && (
+                  <div className="mt-4 space-y-4 border-t border-emerald-200 pt-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field
+                        label={`Opening stock quantity (${form.unit || "units"})`}
+                        required
+                        type="number"
+                        min="0.001"
+                        step="0.001"
+                        value={form.opening_quantity}
+                        error={formErrors.opening_quantity}
+                        onChange={(e) => updateForm("opening_quantity", e.target.value)}
+                        placeholder="10"
+                      />
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700">Supplier<span className="ml-1 text-red-500">*</span></label>
+                        <input
+                          value={supplierQuery}
+                          onChange={(event) => setSupplierQuery(event.target.value)}
+                          placeholder="Search suppliers"
+                          className={`mt-1.5 w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 ${formErrors.opening_supplier_id ? "border-red-400" : "border-slate-200"}`}
+                        />
+                        <select
+                          value={form.opening_supplier_id}
+                          onChange={(event) => updateForm("opening_supplier_id", event.target.value)}
+                          className={`mt-2 w-full rounded-xl border bg-white px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 ${formErrors.opening_supplier_id ? "border-red-400" : "border-slate-200"}`}
+                        >
+                          <option value="">Select supplier</option>
+                          {suppliers
+                            .filter((supplier) => supplier.name.toLowerCase().includes(supplierQuery.toLowerCase()))
+                            .map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.phone ? ` (${supplier.phone})` : ""}</option>)}
+                        </select>
+                        {formErrors.opening_supplier_id && <span className="mt-1 block text-xs text-red-600">{formErrors.opening_supplier_id}</span>}
+                        {!suppliers.length && <span className="mt-1 block text-xs text-slate-500">Create the supplier first in Suppliers.</span>}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-white bg-white/70 p-3 text-sm font-semibold text-slate-700">
+                      <p>Total purchase amount: <span className="text-slate-900">₹{(Number(form.opening_quantity || 0) * Number(form.purchase_price || 0)).toFixed(2)}</span></p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-700">Payment status</p>
+                      <div className="mt-2 grid grid-cols-3 gap-2">
+                        {[['PAID', 'Fully Paid'], ['PARTIAL', 'Partially Paid'], ['PENDING', 'Due']].map(([value, label]) => (
+                          <label key={value} className={`cursor-pointer rounded-xl border px-3 py-2 text-center text-xs font-bold ${form.opening_payment_status === value ? "border-emerald-600 bg-emerald-100 text-emerald-800" : "border-slate-200 bg-white text-slate-600"}`}>
+                            <input type="radio" name="opening-payment-status" value={value} checked={form.opening_payment_status === value} onChange={(event) => updateForm("opening_payment_status", event.target.value)} className="sr-only" />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    {form.opening_payment_status === "PARTIAL" && (
+                      <Field
+                        label="Amount paid (₹)"
+                        required
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.opening_amount_paid}
+                        error={formErrors.opening_amount_paid}
+                        onChange={(e) => updateForm("opening_amount_paid", e.target.value)}
+                        placeholder="400"
+                      />
+                    )}
+                    <div className="grid grid-cols-2 gap-3 text-sm font-semibold text-slate-700">
+                      <span>Paid: ₹{(form.opening_payment_status === "PAID" ? Number(form.opening_quantity || 0) * Number(form.purchase_price || 0) : form.opening_payment_status === "PENDING" ? 0 : Number(form.opening_amount_paid || 0)).toFixed(2)}</span>
+                      <span className="text-right">Due: ₹{Math.max(0, Number(form.opening_quantity || 0) * Number(form.purchase_price || 0) - (form.opening_payment_status === "PAID" ? Number(form.opening_quantity || 0) * Number(form.purchase_price || 0) : form.opening_payment_status === "PENDING" ? 0 : Number(form.opening_amount_paid || 0))).toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+            {editTarget && (
+              <div className="rounded-xl bg-slate-50 p-3 text-sm font-semibold text-slate-700">
+                Product ID: {editTarget.product_id} (cannot be changed)
+              </div>
+            )}
+            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={closeProductForm}
+                className="rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={saving || imageUploading}
+                className="rounded-xl bg-[var(--brand-700)] px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+              >
+                {saving ? "Saving..." : editTarget ? "Save Changes" : "Save product"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+      {adjustment && (
+        <Modal
+          title={`Adjust stock: ${adjustment.name}`}
+          onClose={() => !saving && setAdjustment(null)}
+        >
+          <form onSubmit={applyAdjustment} className="space-y-5">
+            {adjustmentError && (
+              <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+                {adjustmentError}
+              </p>
+            )}
+            <div
+              className={`rounded-xl p-4 ${adjustmentIsRemoval ? "bg-amber-50" : "bg-emerald-50"}`}
+            >
+              <p
+                className={`text-sm ${adjustmentIsRemoval ? "text-amber-800" : "text-emerald-800"}`}
+              >
+                Current stock
+              </p>
+              <p
+                className={`mt-1 text-2xl font-extrabold ${adjustmentIsRemoval ? "text-amber-950" : "text-emerald-950"}`}
+              >
+                {formatStockWithUnit(adjustment.current_stock, adjustment.unit)}
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm font-semibold text-slate-700">
+                Transaction type
+                <select
+                  value={adjustmentForm.direction}
+                  onChange={(e) =>
+                    setAdjustmentForm({
+                      ...adjustmentForm,
+                      direction: e.target.value,
+                    })
+                  }
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm"
+                >
+                  <option value="ADD">Add Stock</option>
+                  <option value="REMOVE">Remove Stock</option>
+                </select>
+              </label>
+              <Field
+                label={
+                  adjustmentIsRemoval ? "Quantity to remove" : "Quantity to add"
+                }
+                required
+                type="number"
+                min="0"
+                step="0.001"
+                value={adjustmentForm.quantity}
+                onChange={(e) => {
+                  setAdjustmentError("");
+                  setAdjustmentForm({
+                    ...adjustmentForm,
+                    quantity: e.target.value,
+                  });
+                }}
+                placeholder="Enter quantity"
+              />
+            </div>
+            <Field
+              label="Reason"
+              required
+              value={adjustmentForm.reason}
+              onChange={(e) =>
+                setAdjustmentForm({ ...adjustmentForm, reason: e.target.value })
+              }
+              placeholder="e.g. Physical stock count"
+            />
+            {adjustmentAfterStock !== null && (
+              <div
+                className={`rounded-xl border p-4 text-sm ${adjustmentIsRemoval ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}
+              >
+                <p>
+                  Stock will {adjustmentIsRemoval ? "decrease" : "increase"}{" "}
+                  from{" "}
+                  <strong>
+                    {formatStockWithUnit(
+                      adjustment.current_stock,
+                      adjustment.unit,
+                    )}
+                  </strong>{" "}
+                  to{" "}
+                  <strong>
+                    {formatStockWithUnit(adjustmentAfterStock, adjustment.unit)}
+                  </strong>
+                  .
+                </p>
+                <p className="mt-1 font-bold">
+                  Adjustment: {adjustmentIsRemoval ? "-" : "+"}
+                  {formatStockWithUnit(adjustmentQuantity, adjustment.unit)}
+                </p>
+              </div>
+            )}
+            <div className="flex flex-col-reverse justify-end gap-2 border-t border-slate-100 pt-4 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => setAdjustment(null)}
+                className="rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={saving}
+                className={`rounded-xl px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50 ${adjustmentIsRemoval ? "bg-amber-600 hover:bg-amber-700" : "bg-[var(--brand-700)] hover:bg-[var(--brand-900)]"}`}
+              >
+                {saving
+                  ? "Saving..."
+                  : adjustmentIsRemoval
+                    ? "Remove Stock"
+                    : "Add Stock"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+      {categoryModalOpen && (
+        <Modal
+          title="Manage categories"
+          onClose={() => !categorySaving && setCategoryModalOpen(false)}
+        >
+          <div className="space-y-5">
+            {categoryErrors.form && (
+              <p className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">
+                {categoryErrors.form}
+              </p>
+            )}
+            <form onSubmit={saveCategory} className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="Category name"
+                  required
+                  value={categoryForm.name}
+                  error={categoryErrors.name}
+                  onChange={(e) => updateCategoryForm("name", e.target.value)}
+                  placeholder="e.g. Grocery"
+                />
+                <Field
+                  label="Description"
+                  value={categoryForm.description}
+                  onChange={(e) =>
+                    updateCategoryForm("description", e.target.value)
+                  }
+                  placeholder="Optional notes"
+                />
+              </div>
+              {editingCategory && (
+                <div className="rounded-xl bg-slate-50 p-3 text-sm font-semibold text-slate-700">
+                  Category ID: {editingCategory.id} (cannot be changed)
+                </div>
+              )}
+              <div className="flex flex-col-reverse justify-end gap-2 border-t border-slate-100 pt-4 sm:flex-row">
+                {editingCategory && (
+                  <button
+                    type="button"
+                    onClick={resetCategoryForm}
+                    className="rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100"
+                  >
+                    Cancel Edit
+                  </button>
+                )}
+                <button
+                  disabled={categorySaving}
+                  className="rounded-xl bg-[var(--brand-700)] px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                >
+                  {categorySaving
+                    ? "Saving..."
+                    : editingCategory
+                      ? "Save Changes"
+                      : "Add Category"}
+                </button>
+              </div>
+            </form>
+            <div className="border-t border-slate-100 pt-4">
+              <h3 className="mb-3 text-sm font-bold text-slate-700">
+                Current categories
+              </h3>
+              <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                {categories.length ? (
+                  categories.map((category) => (
+                    <div
+                      key={category.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 p-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-800">
+                          {category.name}
+                        </p>
+                        {category.description && (
+                          <p className="mt-1 text-xs text-slate-500">
+                            {category.description}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => startEditCategory(category)}
+                          className="rounded-lg p-2 text-emerald-700 hover:bg-emerald-50"
+                          title="Edit category"
+                          aria-label={`Edit ${category.name}`}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeCategory(category)}
+                          className="rounded-lg p-2 text-red-600 hover:bg-red-50"
+                          title="Remove category"
+                          aria-label={`Remove ${category.name}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+                    No categories found.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {selected && (
+        <Modal title={selected.name} onClose={() => setSelected(null)}>
+          <div className="space-y-6">
+            <div className="flex items-center gap-4">
+              <ProductImage
+                src={selected.image_url}
+                alt={selected.name}
+                size="lg"
+              />
+              <div>
+                <p className="text-sm text-slate-500">
+                  {selected.category_name || "Uncategorized"} · {selected.unit}
+                </p>
+                <p className="mt-1 text-2xl font-extrabold">
+                  {formatCurrency(selected.selling_price)}
+                </p>
+                <StatusBadge
+                  status={stockStatus(
+                    selected.current_stock,
+                    selected.minimum_stock,
+                  )}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                ["Current stock", selected.current_stock],
+                ["Minimum stock", selected.minimum_stock],
+                ["Purchase price", formatCurrency(selected.purchase_price)],
+                ["Last updated", formatDate(selected.updated_at)],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">{label}</p>
+                  <p className="mt-1 font-bold">{value}</p>
+                </div>
+              ))}
+            </div>
+            <div>
+              <h3 className="mb-3 font-bold">Stock history</h3>
+              {history.length ? (
+                <div className="space-y-2">
+                  {history.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center justify-between rounded-xl border border-slate-100 p-3 text-sm"
+                    >
+                      <div>
+                        <p className="font-bold">{entry.transaction_type}</p>
+                        <p className="text-xs text-slate-500">
+                          {entry.reason || "No reason"} ·{" "}
+                          {formatDate(entry.created_at)}
+                        </p>
+                      </div>
+                      <span
+                        className={`font-extrabold ${Number(entry.quantity_change) >= 0 ? "text-emerald-700" : "text-red-600"}`}
+                      >
+                        {Number(entry.quantity_change) >= 0 ? "+" : ""}
+                        {entry.quantity_change}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+                  No stock movements recorded yet.
+                </p>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+      {archiveTarget && (
+        <Modal
+          title={archiveTarget.is_active ? "Archive product?" : "Restore product?"}
+          onClose={() => !lifecycleSaving && setArchiveTarget(null)}
+        >
+          <div className="space-y-5">
+            <p className="text-sm leading-6 text-slate-600">
+              {archiveTarget.is_active
+                ? `${archiveTarget.name} will be removed from active inventory and Billing/POS. Historical sales, purchases, and inventory records will be preserved.`
+                : `${archiveTarget.name} will return to active inventory and Billing/POS using the same product ID and history.`}
+            </p>
+            <div className="flex flex-col-reverse justify-end gap-2 border-t border-slate-100 pt-4 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => setArchiveTarget(null)}
+                className="rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={lifecycleSaving}
+                onClick={updateProductLifecycle}
+                className={`rounded-xl px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50 ${archiveTarget.is_active ? "bg-red-600 hover:bg-red-700" : "bg-[var(--brand-700)] hover:bg-[var(--brand-900)]"}`}
+              >
+                {lifecycleSaving
+                  ? "Saving..."
+                  : archiveTarget.is_active
+                    ? "Archive Product"
+                    : "Restore Product"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
 }
 
-function Metric({ label, value, tone = 'neutral' }) { const color = { neutral: 'text-slate-800', green: 'text-emerald-700', amber: 'text-amber-700', red: 'text-red-600' }[tone]; return <div className="surface rounded-2xl p-4"><p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{label}</p><p className={`mt-1 text-2xl font-extrabold ${color}`}>{value}</p></div>; }
-function Modal({ title, onClose, children }) { return <div className="modal-overlay fixed inset-0 z-[60] flex items-center justify-center p-4"><div role="dialog" aria-modal="true" className="modal-window rounded-lg bg-white p-6 shadow-xl sm:max-w-2xl"><div className="mb-5 flex items-center justify-between border-b border-slate-200 pb-3"><h2 className="text-xl font-extrabold">{title}</h2><button onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100" aria-label="Close"><X className="h-5 w-5" /></button></div>{children}</div></div>; }
+function Metric({ label, value, tone = "neutral" }) {
+  const color = {
+    neutral: "text-slate-800",
+    green: "text-emerald-700",
+    amber: "text-amber-700",
+    red: "text-red-600",
+  }[tone];
+  return (
+    <div className="surface rounded-2xl p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+        {label}
+      </p>
+      <p className={`mt-1 text-2xl font-extrabold ${color}`}>{value}</p>
+    </div>
+  );
+}
+function Modal({ title, onClose, children }) {
+  return (
+    <div className="modal-overlay fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="modal-window rounded-lg bg-white p-6 shadow-xl sm:max-w-2xl"
+      >
+        <div className="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
+          <h2 className="text-xl font-extrabold">{title}</h2>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}

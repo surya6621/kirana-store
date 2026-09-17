@@ -75,7 +75,7 @@ async function getSupplierBalance(client, supplierId, forUpdate = false) {
 
 async function getAllSupplierBalances(client, cleanupSettled = false) {
     const suppliersResult = await client.query(`
-        SELECT id, name, phone, is_active
+        SELECT id, name, phone, address, is_active
         FROM suppliers
         ORDER BY name ASC
     `);

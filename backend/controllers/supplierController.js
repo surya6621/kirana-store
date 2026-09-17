@@ -88,6 +88,85 @@ const createSupplier = async (req, res) => {
     }
 };
 
+const updateSupplier = async (req, res) => {
+    const allowedFields = {
+        name: "name",
+        phone: "phone",
+        address: "address",
+    };
+    const updates = {};
+
+    try {
+        for (const [field] of Object.entries(allowedFields)) {
+            if (!Object.prototype.hasOwnProperty.call(req.body, field)) {
+                continue;
+            }
+
+            const value = req.body[field];
+
+            if (field === "name") {
+                if (typeof value !== "string" || !value.trim()) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Supplier name is required",
+                    });
+                }
+                updates.name = value.trim().slice(0, 150);
+            } else if (field === "phone") {
+                updates.phone =
+                    typeof value === "string" && value.trim()
+                        ? value.trim().slice(0, 20)
+                        : null;
+            } else if (field === "address") {
+                updates.address =
+                    typeof value === "string" && value.trim()
+                        ? value.trim()
+                        : null;
+            }
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "No supplier changes were provided",
+            });
+        }
+
+        const values = Object.values(updates);
+        const setClause = Object.keys(updates)
+            .map((column, index) => `${column} = $${index + 1}`)
+            .join(", ");
+
+        const result = await pool.query(
+            `UPDATE suppliers
+             SET ${setClause}
+             WHERE id = $${values.length + 1}
+             RETURNING id, name, phone, address, is_active, created_at`,
+            [...values, req.params.supplierId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Supplier not found",
+            });
+        }
+
+        res.json({
+            success: true,
+            message: "Supplier updated successfully",
+            data: result.rows[0],
+        });
+    } catch (error) {
+        console.error("Update supplier error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Unable to update supplier. Please try again.",
+        });
+    }
+};
+
 // =========================================
 // GET SUPPLIER DUES
 // =========================================
@@ -383,6 +462,7 @@ const recordSupplierPayment = async (req, res) => {
 module.exports = {
     getSuppliers,
     createSupplier,
+    updateSupplier,
     getSupplierDues,
     getSupplierCreditHistory,
     recordSupplierPayment,

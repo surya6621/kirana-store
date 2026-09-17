@@ -3,6 +3,8 @@ const express = require("express");
 const {
     getCategories,
     createCategory,
+    updateCategory,
+    archiveCategory,
 } = require("../controllers/categoryController");
 
 const {
@@ -21,6 +23,20 @@ router.post(
     authenticate,
     requireStaff,
     createCategory
+);
+
+router.patch(
+    "/:categoryId",
+    authenticate,
+    requireStaff,
+    updateCategory
+);
+
+router.delete(
+    "/:categoryId",
+    authenticate,
+    requireStaff,
+    archiveCategory
 );
 
 module.exports = router;

@@ -1,11 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../../../services/api';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Loader } from '../../../components/ui/Loader';
 import { ErrorMessage } from '../../../components/ui/ErrorMessage';
-import { Plus, X } from 'lucide-react';
+import { formatCurrency } from '../../../utils/format';
+import { Eye, Plus, X } from 'lucide-react';
+
+function formatDateTime(dateStr) {
+  if (!dateStr) return '-';
+  try {
+    return new Date(dateStr).toLocaleString('en-IN');
+  } catch {
+    return dateStr;
+  }
+}
+
+function formatQuantity(value, unit) {
+  const quantity = Number(value);
+  const formatted = Number.isFinite(quantity)
+    ? quantity.toLocaleString('en-IN', { maximumFractionDigits: 3, useGrouping: false })
+    : value;
+  return `${formatted} ${unit || 'units'}`;
+}
 
 export function Purchases() {
   const [purchases, setPurchases] = useState([]);
@@ -20,6 +38,11 @@ export function Purchases() {
   const [purchaseItems, setPurchaseItems] = useState([{ product_id: '', quantity: '', purchase_price: '' }]);
   const [amountPaid, setAmountPaid] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [viewPurchase, setViewPurchase] = useState(null);
+  const [purchaseDetails, setPurchaseDetails] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState('');
+  const detailsRequestRef = useRef(0);
 
   useEffect(() => {
     fetchData();
@@ -111,6 +134,47 @@ export function Purchases() {
     }
   };
 
+  const openPurchaseDetails = async (purchase) => {
+    const requestId = detailsRequestRef.current + 1;
+    detailsRequestRef.current = requestId;
+    setViewPurchase(purchase);
+    setPurchaseDetails(null);
+    setDetailsError('');
+    setDetailsLoading(true);
+
+    try {
+      const res = await api.get(`/purchases/${purchase.id}`);
+      if (!res.success) throw new Error(res.message || 'Unable to load purchase details.');
+      if (detailsRequestRef.current === requestId) setPurchaseDetails(res.data);
+    } catch (err) {
+      if (detailsRequestRef.current !== requestId) return;
+      setDetailsError(err.message === 'Purchase not found' ? 'Purchase not found.' : 'Unable to load purchase details. Please try again.');
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const closePurchaseDetails = () => {
+    detailsRequestRef.current += 1;
+    setViewPurchase(null);
+    setPurchaseDetails(null);
+    setDetailsError('');
+    setDetailsLoading(false);
+  };
+
+  useEffect(() => {
+    if (!viewPurchase) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') closePurchaseDetails();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [viewPurchase]);
+
+  const retryPurchaseDetails = () => {
+    if (viewPurchase) openPurchaseDetails(viewPurchase);
+  };
+
   if (loading) return <Loader text="Loading purchases..." />;
 
   return (
@@ -141,12 +205,13 @@ export function Purchases() {
                 <th className="pb-3">Total Amount</th>
                 <th className="pb-3">Paid</th>
                 <th className="pb-3">Due</th>
+                <th className="pb-3 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {purchases.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="text-center py-6 text-gray-500">No purchases recorded.</td>
+                  <td colSpan="7" className="text-center py-6 text-gray-500">No purchases recorded.</td>
                 </tr>
               ) : (
                 purchases.map((p, idx) => {
@@ -161,6 +226,17 @@ export function Purchases() {
                       <td className="py-4 font-bold">₹{total}</td>
                       <td className="py-4 text-green-600 font-medium">₹{paid}</td>
                       <td className="py-4 text-red-600 font-medium">₹{due}</td>
+                      <td className="py-4 text-center">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="min-h-9 px-3 py-1.5 text-xs"
+                          onClick={() => openPurchaseDetails(p)}
+                          aria-label={`View Purchase #${p.id}`}
+                        >
+                          <Eye className="mr-1 inline-block h-4 w-4" /> View
+                        </Button>
+                      </td>
                     </tr>
                   );
                 })
@@ -173,7 +249,7 @@ export function Purchases() {
             const total = Number(p.total_amount || 0);
             const paid = Number(p.amount_paid || 0);
             const due = p.due_amount !== undefined ? Number(p.due_amount) : Math.max(0, total - paid);
-            return <article key={p.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-gray-900">Purchase #{p.id}</p><p className="mt-1 text-xs text-gray-500">{new Date(p.created_at).toLocaleString()}</p></div><span className="text-sm font-bold text-red-600">Due ₹{due}</span></div><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Supplier</p><p className="mt-1 font-semibold text-gray-900 break-words">{p.supplier_name || 'Unknown Supplier'}</p></div><div><p className="text-xs text-gray-500">Total</p><p className="mt-1 font-bold">₹{total}</p></div><div><p className="text-xs text-gray-500">Paid</p><p className="mt-1 font-medium text-green-600">₹{paid}</p></div></div></article>;
+            return <article key={p.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-gray-900">Purchase #{p.id}</p><p className="mt-1 text-xs text-gray-500">{new Date(p.created_at).toLocaleString()}</p></div><span className="text-sm font-bold text-red-600">Due ₹{due}</span></div><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-gray-500">Supplier</p><p className="mt-1 font-semibold text-gray-900 break-words">{p.supplier_name || 'Unknown Supplier'}</p></div><div><p className="text-xs text-gray-500">Total</p><p className="mt-1 font-bold">₹{total}</p></div><div><p className="text-xs text-gray-500">Paid</p><p className="mt-1 font-medium text-green-600">₹{paid}</p></div></div><Button type="button" variant="outline" className="mt-4 min-h-9 px-3 py-1.5 text-xs" onClick={() => openPurchaseDetails(p)}><Eye className="mr-1 inline-block h-4 w-4" /> View</Button></article>;
           })}
         </div>
       </Card>
@@ -291,6 +367,97 @@ export function Purchases() {
           </div>
         </div>
       )}
+
+      {viewPurchase && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closePurchaseDetails();
+          }}
+        >
+          <div className="modal-window max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+            <div className="mb-5 flex items-center justify-between border-b border-slate-200 pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Purchase #{viewPurchase.id}</h3>
+                <p className="mt-1 text-xs text-slate-500">Read-only purchase details</p>
+              </div>
+              <button onClick={closePurchaseDetails} className="text-gray-400 hover:text-gray-600" aria-label="Close purchase details">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {detailsLoading ? (
+              <p className="py-10 text-center text-sm font-medium text-slate-500">Loading purchase details...</p>
+            ) : detailsError ? (
+              <div className="space-y-4 py-6 text-center">
+                <p className="text-sm font-medium text-red-600">{detailsError}</p>
+                <Button type="button" variant="outline" onClick={retryPurchaseDetails}>Try again</Button>
+              </div>
+            ) : purchaseDetails ? (
+              <div className="space-y-6">
+                <div className="grid gap-4 rounded-xl bg-slate-50 p-4 sm:grid-cols-2">
+                  <Detail label="Purchase ID" value={`#${purchaseDetails.id}`} />
+                  <Detail label="Date & Time" value={formatDateTime(purchaseDetails.created_at)} />
+                  <Detail label="Supplier" value={purchaseDetails.supplier_name || 'Unknown Supplier'} />
+                  <Detail label="Supplier Phone" value={purchaseDetails.supplier_phone || '-'} />
+                </div>
+
+                <section>
+                  <h4 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-600">Purchase Items</h4>
+                  {purchaseDetails.items?.length ? (
+                    <div className="max-h-64 overflow-auto rounded-xl border border-slate-200">
+                      <table className="w-full min-w-[30rem] text-left text-sm">
+                        <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                          <tr><th className="px-3 py-3">Product</th><th className="px-3 py-3">Quantity</th><th className="px-3 py-3">Buy Price</th><th className="px-3 py-3 text-right">Total</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {purchaseDetails.items.map((item) => (
+                            <tr key={item.id}>
+                              <td className="px-3 py-3 font-semibold text-slate-800">{item.product_name || 'Unknown Product'}</td>
+                              <td className="px-3 py-3 text-slate-600">{formatQuantity(item.quantity, item.unit)}</td>
+                              <td className="px-3 py-3 text-slate-600">{formatCurrency(item.purchase_price)}</td>
+                              <td className="px-3 py-3 text-right font-semibold text-slate-800">{formatCurrency(item.line_total)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No purchase items found.</p>}
+                </section>
+
+                <div className="space-y-2 border-y border-slate-200 py-4 text-sm">
+                  <SummaryRow label="Total Amount" value={formatCurrency(purchaseDetails.total_amount)} />
+                  <SummaryRow label="Paid" value={formatCurrency(purchaseDetails.amount_paid)} />
+                  <SummaryRow label="Due" value={formatCurrency(purchaseDetails.due_amount)} emphasis />
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="font-semibold text-slate-700">Status</span>
+                    <span className={`status-badge ${purchaseDetails.payment_status === 'PAID' ? 'status-success' : purchaseDetails.payment_status === 'PARTIAL' ? 'status-warning' : 'status-danger'}`}>
+                      {purchaseDetails.payment_status === 'PENDING' ? 'DUE' : purchaseDetails.payment_status}
+                    </span>
+                  </div>
+                </div>
+
+                <section>
+                  <h4 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-600">Payment History</h4>
+                  {purchaseDetails.payments?.length ? <div className="space-y-2">{purchaseDetails.payments.map((payment) => <div key={payment.id} className="rounded-xl border border-slate-100 p-3 text-sm"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-800">{formatDateTime(payment.created_at)}</p><p className="text-xs text-slate-500">{payment.payment_method || 'Payment'}</p></div><span className="shrink-0 font-bold text-slate-800">{formatCurrency(payment.amount)}</span></div>{payment.description && <p className="mt-2 break-words text-xs text-slate-500">{payment.description}</p>}</div>)}</div> : <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No payments recorded for this purchase.</p>}
+                </section>
+
+                <div className="flex justify-end border-t border-slate-100 pt-4">
+                  <Button type="button" variant="secondary" onClick={closePurchaseDetails}>Close</Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function Detail({ label, value }) {
+  return <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 break-words font-semibold text-slate-800">{value}</p></div>;
+}
+
+function SummaryRow({ label, value, emphasis = false }) {
+  return <div className={`flex items-center justify-between ${emphasis ? 'font-bold text-red-600' : 'text-slate-700'}`}><span>{label}</span><span>{value}</span></div>;
 }
