@@ -5,7 +5,7 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Loader } from '../../../components/ui/Loader';
 import { ErrorMessage } from '../../../components/ui/ErrorMessage';
-import { Plus, X, CreditCard, Printer, Archive, Edit } from 'lucide-react';
+import { Plus, X, CreditCard, Printer, Archive, Edit, Trash2, RotateCcw, Trash } from 'lucide-react';
 
 function formatDate(dateStr) {
   if (!dateStr) return '-';
@@ -131,6 +131,12 @@ export function Customers() {
   const [billPaymentMethod, setBillPaymentMethod] = useState('CASH');
   const [billPaymentLoading, setBillPaymentLoading] = useState(false);
   const [archivingCustomerId, setArchivingCustomerId] = useState(null);
+  const [deletedCustomers, setDeletedCustomers] = useState([]);
+  const [showDeletedModal, setShowDeletedModal] = useState(false);
+  const [deletedLoading, setDeletedLoading] = useState(false);
+  const [deletedError, setDeletedError] = useState(null);
+  const [restoringCustomerId, setRestoringCustomerId] = useState(null);
+  const [permanentlyDeletingCustomerId, setPermanentlyDeletingCustomerId] = useState(null);
 
   // Fetch all customers
   const fetchCustomers = async () => {
@@ -170,32 +176,75 @@ export function Customers() {
     }
   };
 
-  // Filter to only outstanding customers (due > 0)
-  const outstandingCustomers = useMemo(() => {
-    return customers.filter(c => {
-      const due = Number(c.total_due || c.current_udhaar || c.udhaar_amount || c.due_amount || 0);
-      return due > 0;
-    });
-  }, [customers]);
-
-  // Search outstanding customers by name or phone
-  const filteredOutstandingCustomers = useMemo(() => {
+  const filteredCustomers = useMemo(() => {
     const term = search.toLowerCase().trim();
-    if (!term) return outstandingCustomers;
-    return outstandingCustomers.filter(c =>
+    if (!term) return customers;
+    return customers.filter(c =>
       c.customer_code?.toLowerCase().includes(term) ||
       c.name?.toLowerCase().includes(term) ||
       c.phone?.toLowerCase().includes(term) ||
       c.phone?.includes(term)
     );
-  }, [outstandingCustomers, search]);
+  }, [customers, search]);
 
   // Total outstanding udhaar
   const totalOutstandingUdhaar = useMemo(() => {
-    return outstandingCustomers.reduce((acc, c) => {
+    return customers.reduce((acc, c) => {
       return acc + Number(c.total_due || c.current_udhaar || c.udhaar_amount || c.due_amount || 0);
     }, 0);
-  }, [outstandingCustomers]);
+  }, [customers]);
+
+  const fetchDeletedCustomers = async () => {
+    try {
+      setDeletedLoading(true);
+      setDeletedError(null);
+      const res = await api.get('/customers/trash');
+      if (!res.success) throw new Error(res.message || 'Failed to load deleted customers');
+      setDeletedCustomers(res.data || []);
+    } catch (err) {
+      setDeletedError(err.message || 'Failed to load deleted customers');
+    } finally {
+      setDeletedLoading(false);
+    }
+  };
+
+  const openDeletedCustomers = async () => {
+    setShowDeletedModal(true);
+    await fetchDeletedCustomers();
+  };
+
+  const restoreCustomer = async (customer) => {
+    setRestoringCustomerId(customer.id);
+    setDeletedError(null);
+    try {
+      const response = await api.patch(`/customers/${customer.id}/restore`);
+      if (!response.success) throw new Error(response.message || 'Unable to restore customer.');
+      await fetchCustomers();
+      await fetchDeletedCustomers();
+    } catch (err) {
+      setDeletedError(err.message || 'Unable to restore customer.');
+    } finally {
+      setRestoringCustomerId(null);
+    }
+  };
+
+  const permanentlyDeleteCustomer = async (customer) => {
+    const confirmed = window.confirm(
+      `Delete ${getCustomerName(customer)} permanently?\nThis cannot be undone.`
+    );
+    if (!confirmed || permanentlyDeletingCustomerId) return;
+    setPermanentlyDeletingCustomerId(customer.id);
+    setDeletedError(null);
+    try {
+      const response = await api.delete(`/customers/${customer.id}/permanent`);
+      if (!response.success) throw new Error(response.message || 'Unable to permanently delete customer.');
+      await fetchDeletedCustomers();
+    } catch (err) {
+      setDeletedError(err.message || 'Unable to permanently delete customer.');
+    } finally {
+      setPermanentlyDeletingCustomerId(null);
+    }
+  };
 
   // Load customer detail (credit history)
   const loadCustomerDetail = useCallback(async (customer) => {
@@ -437,6 +486,15 @@ export function Customers() {
           </p>
         </div>
         <div className="flex w-full flex-wrap gap-3 md:w-auto">
+          <Button
+            onClick={openDeletedCustomers}
+            variant="outline"
+            className="flex items-center space-x-2 text-sm"
+            aria-label="Open deleted customers"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>Trash</span>
+          </Button>
           <Button onClick={() => { setCreatedCustomerCode(''); setShowAddModal(true); }} className="flex items-center space-x-2 text-sm">
             <Plus className="w-4 h-4" />
             <span>Add Customer</span>
@@ -447,7 +505,7 @@ export function Customers() {
         </div>
       </div>
 
-      {/* Outstanding Customers List */}
+      {/* Active Customers List */}
       {successMessage && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
           {successMessage}
@@ -458,7 +516,7 @@ export function Customers() {
       )}
       <Card>
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-bold text-gray-900">Outstanding Customers</h2>
+          <h2 className="text-lg font-bold text-gray-900">Customers</h2>
           <div className="w-full sm:w-72">
             <Input
               placeholder="Search by Customer ID, name or phone..."
@@ -484,14 +542,14 @@ export function Customers() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {filteredOutstandingCustomers.length === 0 ? (
+              {filteredCustomers.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="text-center py-6 text-gray-500">
-                    {search ? 'No matching customers found.' : 'No outstanding customers.'}
+                    {search ? 'No matching customers found.' : 'No active customers.'}
                   </td>
                 </tr>
               ) : (
-                filteredOutstandingCustomers.map(c => {
+                filteredCustomers.map(c => {
                   const due = getCustomerDue(c);
                   const isSelected = selectedCustomer && String(selectedCustomer.id) === String(c.id);
                   return (
@@ -506,7 +564,7 @@ export function Customers() {
                       <td className="py-4 text-gray-600">
                         {outstandingBills.length > 0 && selectedCustomer && String(selectedCustomer.id) === String(c.id)
                           ? outstandingBills.length
-                          : '-'}
+                          : due > 0 ? '-' : 0}
                       </td>
                       <td className="py-4">
                         <span className={`px-2.5 py-1 rounded-full font-bold text-xs ${
@@ -553,6 +611,73 @@ export function Customers() {
           </table>
         </div>
       </Card>
+
+      {showDeletedModal && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="modal-window bg-white rounded-lg shadow-xl max-w-3xl w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Deleted Customers</h3>
+                <p className="text-xs text-gray-500">Archived customers and their protected financial history.</p>
+              </div>
+              <button onClick={() => setShowDeletedModal(false)} className="text-gray-400 hover:text-gray-600" aria-label="Close deleted customers">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {deletedLoading && <Loader text="Loading deleted customers..." />}
+            {deletedError && <ErrorMessage message={deletedError} />}
+            {!deletedLoading && deletedCustomers.length === 0 && (
+              <p className="py-6 text-center text-sm text-gray-500">No deleted customers.</p>
+            )}
+            {!deletedLoading && deletedCustomers.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="min-w-[640px] w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b text-gray-500">
+                      <th className="pb-3">Customer ID</th>
+                      <th className="pb-3">Customer Name</th>
+                      <th className="pb-3">Phone</th>
+                      <th className="pb-3">Deleted Date</th>
+                      <th className="pb-3 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {deletedCustomers.map((customer) => (
+                      <tr key={customer.id}>
+                        <td className="py-3 font-mono text-xs font-bold text-emerald-700">{customer.customer_code}</td>
+                        <td className="py-3 font-semibold text-gray-900">{customer.name}</td>
+                        <td className="py-3 text-gray-600">{customer.phone || '-'}</td>
+                        <td className="py-3 text-gray-600">-</td>
+                        <td className="py-3 text-center whitespace-nowrap">
+                          <Button
+                            onClick={() => restoreCustomer(customer)}
+                            variant="outline"
+                            disabled={restoringCustomerId === customer.id}
+                            className="mr-2 inline-flex items-center space-x-1 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            <span>{restoringCustomerId === customer.id ? 'Restoring...' : 'Restore'}</span>
+                          </Button>
+                          <Button
+                            onClick={() => permanentlyDeleteCustomer(customer)}
+                            variant="outline"
+                            disabled={permanentlyDeletingCustomerId === customer.id}
+                            className="inline-flex items-center space-x-1 text-xs text-red-600 border-red-300 hover:bg-red-50"
+                          >
+                            <Trash className="h-3.5 w-3.5" />
+                            <span>{permanentlyDeletingCustomerId === customer.id ? 'Deleting...' : 'Delete Permanently'}</span>
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Selected Customer Detail Panel */}
       {selectedCustomer && (
