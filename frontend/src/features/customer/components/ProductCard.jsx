@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useCustomerCart } from '../context/CustomerCartContext';
 import { ShoppingBag, Plus, Check } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL;
 const SERVER_URL = API_URL.replace(/\/api\/?$/, '');
 
 function resolveImageUrl(imageUrl) {

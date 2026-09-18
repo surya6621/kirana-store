@@ -12,7 +12,7 @@ export function CustomerHomeStub() {
     // Test API connection via /api/health
     const checkApi = async () => {
       try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiUrl = import.meta.env.VITE_API_URL;
         // Note: health endpoint is at root /api/health or just check a public endpoint
         const res = await fetch(`${apiUrl.replace('/api', '')}/api/health`);
         const data = await res.json();
