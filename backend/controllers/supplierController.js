@@ -225,12 +225,18 @@ const getSupplierCreditHistory = async (req, res) => {
             `SELECT
                 sct.id,
                 sct.transaction_type,
-                sct.amount,
+                CASE
+                    WHEN sct.transaction_type = 'CREDIT' AND p.total_amount IS NOT NULL
+                    THEN p.total_amount
+                    ELSE sct.amount
+                END AS amount,
                 sct.description,
                 sct.purchase_id,
                 sct.created_at,
                 u.name AS created_by_name
              FROM supplier_credit_transactions sct
+             LEFT JOIN purchases p
+                ON p.id = sct.purchase_id
              LEFT JOIN users u
                 ON sct.created_by = u.id
              WHERE sct.supplier_id = $1

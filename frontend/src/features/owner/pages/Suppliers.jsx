@@ -5,7 +5,7 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Loader } from '../../../components/ui/Loader';
 import { ErrorMessage } from '../../../components/ui/ErrorMessage';
-import { Plus, X, CreditCard, History, Archive, Edit } from 'lucide-react';
+import { Plus, X, CreditCard, Archive, Edit } from 'lucide-react';
 
 export function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
@@ -29,11 +29,6 @@ export function Suppliers() {
   const [paymentError, setPaymentError] = useState('');
   const [paymentLoading, setPaymentLoading] = useState(false);
 
-  // History Modal
-  const [historySupplier, setHistorySupplier] = useState(null);
-  const [historyData, setHistoryData] = useState(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState(null);
   const [archivingSupplierId, setArchivingSupplierId] = useState(null);
 
   useEffect(() => {
@@ -55,24 +50,6 @@ export function Suppliers() {
       setLoading(false);
     }
   }
-
-  const fetchHistory = async (supplier) => {
-    setHistorySupplier(supplier);
-    setHistoryLoading(true);
-    setHistoryError(null);
-    try {
-      const res = await api.get(`/suppliers/${supplier.id}/credit-history`);
-      if (res.success) {
-        setHistoryData(res.data);
-      } else {
-        setHistoryError(res.message || 'Failed to load transaction history');
-      }
-    } catch (err) {
-      setHistoryError(err.message);
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
 
   const archiveSupplier = async (supplier) => {
     const confirmed = window.confirm(`${supplier.name} will be removed from active suppliers. Existing purchases, payments and transaction history will be preserved.`);
@@ -147,9 +124,6 @@ export function Suppliers() {
             : supplier
         )
       );
-      if (historySupplier && String(historySupplier.id) === String(editSupplier.id)) {
-        setHistorySupplier({ ...historySupplier, ...res.data });
-      }
       if (paySupplier && String(paySupplier.id) === String(editSupplier.id)) {
         setPaySupplier({ ...paySupplier, ...res.data });
       }
@@ -191,9 +165,6 @@ export function Suppliers() {
         setPaymentAmount('');
         setPaymentError('');
         await fetchSuppliers();
-        if (historySupplier && historySupplier.id === paySupplier.id) {
-          await fetchHistory(paySupplier);
-        }
       } else {
         setPaymentError(res.message || 'Payment failed. Please try again.');
       }
@@ -286,14 +257,6 @@ export function Suppliers() {
                         >
                           <Edit className="w-3.5 h-3.5" />
                           <span>Edit</span>
-                        </Button>
-                        <Button
-                          onClick={() => fetchHistory(s)}
-                          variant="outline"
-                          className="text-xs px-2.5 py-1 inline-flex items-center space-x-1"
-                        >
-                          <History className="w-3.5 h-3.5" />
-                          <span>History</span>
                         </Button>
                         {due > 0 ? (
                           <Button
@@ -485,104 +448,6 @@ export function Suppliers() {
         </div>
       )}
 
-      {/* Supplier Transaction History Modal */}
-      {historySupplier && (
-        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="modal-window bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 space-y-4">
-            <div className="flex justify-between items-center border-b pb-3">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">Transaction History: {historySupplier.name}</h3>
-                <p className="text-xs text-gray-500">Phone: {historySupplier.phone || 'N/A'}</p>
-              </div>
-              <button onClick={() => setHistorySupplier(null)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {historyLoading && <Loader text="Loading transaction history..." />}
-            {historyError && <ErrorMessage message={historyError} />}
-
-            {!historyLoading && !historyError && historyData && (
-              <div className="space-y-4">
-                <div className="bg-gray-50 p-4 rounded-lg flex justify-between items-center">
-                  <div>
-                    <span className="text-xs text-gray-500 uppercase font-medium">Current Outstanding Due</span>
-                    <h4 className="text-xl font-bold text-red-600">₹{Number(historyData.current_due ?? historySupplier.total_due ?? historySupplier.current_due ?? 0).toFixed(2)}</h4>
-                  </div>
-                  <div>
-                    <Button 
-                      disabled={Number(historyData.current_due ?? historySupplier.total_due ?? historySupplier.current_due ?? 0) <= 0}
-                      onClick={() => { setPaymentError(''); setPaymentAmount(''); setPaySupplier({ ...historySupplier, total_due: historyData.current_due }); setHistorySupplier(null); }}
-                      className="text-xs py-1.5"
-                    >
-                      Pay Due Now
-                    </Button>
-                  </div>
-                </div>
-
-                {historyData.outstanding_purchases?.length > 0 && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-                    <h4 className="mb-3 text-sm font-bold text-amber-900">Outstanding purchases</h4>
-                    <div className="space-y-2">
-                      {historyData.outstanding_purchases.map((purchase) => (
-                        <div key={purchase.purchase_id} className="flex items-center justify-between text-sm">
-                          <span className="font-semibold text-amber-900">Purchase #{purchase.purchase_id}</span>
-                          <span className="font-bold text-red-700">₹{Number(purchase.due_amount).toFixed(2)} due</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="overflow-x-auto">
-                  <table className="min-w-[640px] w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b text-gray-500">
-                        <th className="pb-2">Date & Time</th>
-                        <th className="pb-2">Type</th>
-                        <th className="pb-2">Description</th>
-                        <th className="pb-2 text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {historyData.history && historyData.history.length === 0 ? (
-                        <tr>
-                          <td colSpan="4" className="text-center py-6 text-gray-500">No transactions recorded for this supplier.</td>
-                        </tr>
-                      ) : (
-                        historyData.history?.map((tx, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="py-3 text-gray-600">{new Date(tx.created_at).toLocaleString()}</td>
-                            <td className="py-3">
-                              <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                                tx.transaction_type === 'CREDIT' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-                              }`}>
-                                {tx.transaction_type}
-                              </span>
-                            </td>
-                            <td className="py-3 text-gray-900">{tx.description || '-'}</td>
-                            <td className={`py-3 text-right font-bold ${
-                              tx.transaction_type === 'CREDIT' ? 'text-red-600' : 'text-green-600'
-                            }`}>
-                              {tx.transaction_type === 'CREDIT' ? '+' : '-'}₹{tx.amount}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            <div className="flex justify-end pt-2 border-t">
-              <Button type="button" variant="secondary" onClick={() => setHistorySupplier(null)}>
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
