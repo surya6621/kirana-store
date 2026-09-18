@@ -39,7 +39,7 @@ const emptyForm = {
   opening_payment_status: "PAID",
   opening_amount_paid: "",
 };
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const API_URL = import.meta.env.VITE_API_URL;
 
 function StatusBadge({ status }) {
   return (
