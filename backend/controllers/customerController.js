@@ -183,6 +183,106 @@ const archiveCustomer = async (req, res) => {
     }
 };
 
+const getDeletedCustomers = async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT id, customer_code, name, phone, address, created_at
+            FROM customers
+            WHERE is_active = false
+            ORDER BY name ASC
+        `);
+
+        res.json({
+            success: true,
+            data: result.rows,
+        });
+    } catch (error) {
+        console.error("Get deleted customers error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to get deleted customers",
+        });
+    }
+};
+
+const restoreCustomer = async (req, res) => {
+    try {
+        const result = await pool.query(
+            `UPDATE customers
+             SET is_active = true
+             WHERE id = $1 AND is_active = false
+             RETURNING id, customer_code, name, phone, address, is_active, created_at`,
+            [req.params.customerId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Deleted customer not found" });
+        }
+
+        res.json({
+            success: true,
+            message: "Customer restored successfully",
+            data: result.rows[0],
+        });
+    } catch (error) {
+        console.error("Restore customer error:", error);
+        res.status(500).json({ success: false, message: "Unable to restore customer" });
+    }
+};
+
+const permanentlyDeleteCustomer = async (req, res) => {
+    try {
+        const customerResult = await pool.query(
+            `SELECT id FROM customers WHERE id = $1 AND is_active = false`,
+            [req.params.customerId]
+        );
+
+        if (customerResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Deleted customer not found" });
+        }
+
+        const dependencyResult = await pool.query(
+            `SELECT
+                EXISTS (SELECT 1 FROM sales WHERE customer_id = $1) AS has_sales,
+                EXISTS (SELECT 1 FROM customer_credit_transactions WHERE customer_id = $1) AS has_credit_transactions`,
+            [req.params.customerId]
+        );
+        const dependencies = dependencyResult.rows[0];
+
+        if (dependencies.has_sales || dependencies.has_credit_transactions) {
+            return res.status(409).json({
+                success: false,
+                message: "Customer cannot be permanently deleted because financial history exists. Restore or keep the customer archived instead.",
+            });
+        }
+
+        const result = await pool.query(
+            `DELETE FROM customers
+             WHERE id = $1 AND is_active = false
+             RETURNING id, customer_code`,
+            [req.params.customerId]
+        );
+
+        res.json({
+            success: true,
+            message: "Customer permanently deleted",
+            data: result.rows[0],
+        });
+    } catch (error) {
+        console.error("Permanently delete customer error:", error);
+
+        if (error.code === "23503") {
+            return res.status(409).json({
+                success: false,
+                message: "Customer cannot be permanently deleted because related records exist.",
+            });
+        }
+
+        res.status(500).json({ success: false, message: "Unable to permanently delete customer" });
+    }
+};
+
 
 // =========================================
 // CREATE CUSTOMER
@@ -616,4 +716,7 @@ module.exports = {
     getAllCustomerPayments,
     updateCustomer,
     archiveCustomer,
+    getDeletedCustomers,
+    restoreCustomer,
+    permanentlyDeleteCustomer,
 };

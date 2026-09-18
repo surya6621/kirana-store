@@ -8,6 +8,9 @@ const {
     getAllCustomerPayments,
     updateCustomer,
     archiveCustomer,
+    getDeletedCustomers,
+    restoreCustomer,
+    permanentlyDeleteCustomer,
 } = require("../controllers/customerController");
 
 const {
@@ -36,6 +39,27 @@ router.patch(
     authenticate,
     requireStaff,
     archiveCustomer
+);
+
+router.get(
+    "/trash",
+    authenticate,
+    requireStaff,
+    getDeletedCustomers
+);
+
+router.patch(
+    "/:customerId/restore",
+    authenticate,
+    requireStaff,
+    restoreCustomer
+);
+
+router.delete(
+    "/:customerId/permanent",
+    authenticate,
+    requireStaff,
+    permanentlyDeleteCustomer
 );
 
 router.patch(
