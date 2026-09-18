@@ -77,7 +77,7 @@ export function OwnerLayout() {
         <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
           <div className={`flex items-center gap-3 ${collapsed ? 'lg:justify-center' : ''}`}>
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-400 text-emerald-950"><Store className="h-5 w-5" /></div>
-            <div className={collapsed ? 'lg:hidden' : ''}><p className="owner-brand text-base font-extrabold">Kirana Desk</p><p className="text-xs text-emerald-200/60">Store operations</p></div>
+            <div className={collapsed ? 'lg:hidden' : ''}><p className="owner-brand text-base font-extrabold">SURYA KIRANA STORE</p><p className="text-xs text-emerald-200/60">Store operations</p></div>
           </div>
           <button aria-label="Close navigation" className="text-emerald-100/60 lg:hidden" onClick={() => setMobileOpen(false)}><X className="h-5 w-5" /></button>
         </div>
