@@ -98,7 +98,7 @@ async function createPurchaseTransaction(client, {
             `INSERT INTO supplier_credit_transactions
                 (supplier_id, purchase_id, transaction_type, amount, description, created_by)
              VALUES ($1, $2, 'CREDIT', $3, $4, $5)`,
-            [supplierId, purchase.id, dueAmount, `Amount due from Purchase #${purchase.id}`, userId]
+            [supplierId, purchase.id, totalAmount, `Amount due from Purchase #${purchase.id}`, userId]
         );
     }
     if (paidAmount > 0) {

@@ -9,8 +9,11 @@ async function getSupplierLiabilities(client, supplierId, forUpdate = false) {
             sct.supplier_id,
             sct.transaction_type,
             sct.amount,
+            p.total_amount AS purchase_total_amount,
             sct.created_at
          FROM supplier_credit_transactions sct
+         LEFT JOIN purchases p
+            ON p.id = sct.purchase_id
          WHERE sct.supplier_id = $1
          ORDER BY sct.created_at ASC, sct.id ASC${lock}`,
         [supplierId]
@@ -20,7 +23,7 @@ async function getSupplierLiabilities(client, supplierId, forUpdate = false) {
         .filter((row) => row.transaction_type === "CREDIT" && row.purchase_id)
         .map((row) => ({
             ...row,
-            originalAmount: roundMoney(row.amount),
+            originalAmount: roundMoney(row.purchase_total_amount ?? row.amount),
             paymentsApplied: 0,
         }));
     const linkedPayments = result.rows.filter(
